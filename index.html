@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Movana | Modern Transportation Marketplace</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Leaflet Interactive Maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+
+  <!-- Navigation Header -->
+  <header>
+    <div class="container header-content">
+      <div class="logo" id="nav-logo">
+        <img src="logo-icon.svg" alt="Movana Icon Logo" style="width: 32px; height: 32px; object-fit: contain;">
+        Movana<span>.</span>
+      </div>
+      
+      <!-- Dynamic Nav Controls -->
+      <nav class="nav-links" id="nav-links">
+        <!-- Will be dynamically populated by JS based on user authentication -->
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main View Container -->
+  <main class="container" id="main-content">
+    
+    <!-- 1. LANDING VIEW -->
+    <section id="landing-view" class="landing-view">
+      <div class="brand-logo-container" style="max-width: 180px; margin: 0 auto 32px auto;">
+        <img src="logo.svg" alt="Movana Full Logo" style="width: 100%; height: auto;">
+      </div>
+      <div class="hero">
+        <h1>Connecting Shippers & Carriers Instantly</h1>
+        <p>Post shipments in seconds, receive competitive bids, and track cargo across the country on a single, ultra-premium logistics platform.</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="landing-get-started">Get Started</button>
+          <button class="btn btn-outline" id="landing-view-marketplace">Browse Market</button>
+        </div>
+      </div>
+
+      <!-- Real-time Stats -->
+      <div class="stats-grid">
+        <div class="card stat-card shipper-accent">
+          <div class="stat-number" id="stat-shipments">128</div>
+          <div class="stat-label">Active Shipments</div>
+        </div>
+        <div class="card stat-card carrier-accent">
+          <div class="stat-number" id="stat-carriers">84</div>
+          <div class="stat-label">Registered Carriers</div>
+        </div>
+        <div class="card stat-card shipper-accent">
+          <div class="stat-number" id="stat-avg-bid">4.2 min</div>
+          <div class="stat-label">Avg. Bid Response</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. AUTHENTICATION & REGISTRATION VIEW -->
+    <section id="auth-view" class="auth-view d-none">
+      <div class="card auth-card">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <img src="logo.svg" alt="Movana Logo" style="width: 80px; height: auto;">
+        </div>
+        <div class="auth-tab">
+          <button class="tab-btn active" id="tab-login">Login</button>
+          <button class="tab-btn" id="tab-register">Register</button>
+        </div>
+
+        <h2 id="auth-title">Welcome Back</h2>
+        <p id="auth-subtitle">Sign in to manage your shipments and bids.</p>
+
+        <form id="auth-form">
+          <!-- Hidden input for mode registration/login -->
+          <input type="hidden" id="auth-mode" value="login">
+
+          <div class="form-group">
+            <label for="auth-username">Username</label>
+            <input type="text" id="auth-username" class="form-control" placeholder="e.g. shipper1" required>
+          </div>
+
+          <div class="form-group">
+            <label for="auth-password">Password</label>
+            <input type="password" id="auth-password" class="form-control" placeholder="••••••••" required>
+          </div>
+
+          <!-- Registration fields (dynamically shown) -->
+          <div id="register-fields" class="d-none">
+            <div class="form-group">
+              <label for="auth-company">Company Name</label>
+              <input type="text" id="auth-company" class="form-control" placeholder="e.g. Acme Shipping Corp">
+            </div>
+
+            <label class="form-group label">Select Your Role</label>
+            <div class="role-select-container">
+              <input type="radio" name="auth-role" id="role-shipper" class="role-radio" value="shipper" checked>
+              <label for="role-shipper" class="role-label shipper-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                  <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                <span>Shipper</span>
+              </label>
+
+              <input type="radio" name="auth-role" id="role-carrier" class="role-radio" value="carrier">
+              <label for="role-carrier" class="role-label carrier-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="1" y="3" width="15" height="13"></rect>
+                  <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                  <circle cx="5.5" cy="18.5" r="2.5"></circle>
+                  <circle cx="18.5" cy="18.5" r="2.5"></circle>
+                </svg>
+                <span>Carrier</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="auth-error" style="color: var(--color-rejected); font-size: 14px; margin-bottom: 16px;" class="d-none"></div>
+
+          <button type="submit" class="btn btn-primary" style="width: 100%;" id="auth-submit-btn">Sign In</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 3. SHIPPER DASHBOARD VIEW -->
+    <section id="shipper-view" class="dashboard-layout d-none">
+      <!-- Left Column: Post Shipment Form -->
+      <aside class="dashboard-sidebar">
+        <div class="card shipper-accent">
+          <h3 class="mb-24" style="font-size: 20px; font-weight: 700;">Post a Shipment</h3>
+          <form id="post-shipment-form">
+            <div class="form-group">
+              <label for="ship-origin">Pickup Address</label>
+              <div class="autocomplete-wrapper">
+                <input type="text" id="ship-origin" class="form-control" placeholder="e.g. 123 Main St, Chicago, IL or Walmart" autocomplete="off" required>
+                <div class="autocomplete-suggestions d-none" id="origin-suggestions"></div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="ship-destination">Delivery Address</label>
+              <div class="autocomplete-wrapper">
+                <input type="text" id="ship-destination" class="form-control" placeholder="e.g. 456 Broad St, Houston, TX" autocomplete="off" required>
+                <div class="autocomplete-suggestions d-none" id="destination-suggestions"></div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="ship-type">Shipment Type</label>
+              <select id="ship-type" class="form-control" required>
+                <option value="" disabled selected>Select Shipment Type</option>
+                <option value="Vehicle Transport">Vehicle Transport</option>
+                <option value="Motorcycle Transport">Motorcycle Transport</option>
+                <option value="Freight">Freight</option>
+                <option value="Household Move">Household Move</option>
+                <option value="Heavy Equipment">Heavy Equipment</option>
+                <option value="Boat Transport">Boat Transport</option>
+                <option value="RV Transport">RV Transport</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <!-- 1. VEHICLE TRANSPORT SUB-FORM -->
+            <div id="form-section-vehicle" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Vehicle Details</h4>
+              
+              <div class="form-group">
+                <label for="vehicle-type">Vehicle Sub-type</label>
+                <select id="vehicle-type" class="form-control">
+                  <option value="" disabled selected>Select Sub-type</option>
+                  <option value="Car">Car</option>
+                  <option value="SUV">SUV</option>
+                  <option value="Pickup">Pickup</option>
+                  <option value="Motorcycle">Motorcycle</option>
+                  <option value="ATV">ATV</option>
+                </select>
+              </div>
+              
+              <div id="vehicle-specs-wrapper" class="d-none">
+                <div class="form-group">
+                  <label for="vehicle-vin">VIN Number (Optional, Auto-Decodes)</label>
+                  <input type="text" id="vehicle-vin" class="form-control" placeholder="17-character VIN" maxlength="17" style="text-transform: uppercase;">
+                  <div id="vin-decode-success" style="color: var(--accent-carrier); font-size: 12px; margin-top: 6px; font-weight: 600;" class="d-none"></div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="vehicle-make">Manufacturer</label>
+                    <select id="vehicle-make" class="form-control">
+                      <option value="" disabled selected>Select Make</option>
+                      <option value="Acura">Acura</option>
+                      <option value="Alfa Romeo">Alfa Romeo</option>
+                      <option value="Audi">Audi</option>
+                      <option value="BMW">BMW</option>
+                      <option value="Buick">Buick</option>
+                      <option value="Cadillac">Cadillac</option>
+                      <option value="Chevrolet">Chevrolet</option>
+                      <option value="Chrysler">Chrysler</option>
+                      <option value="Dodge">Dodge</option>
+                      <option value="Ford">Ford</option>
+                      <option value="Genesis">Genesis</option>
+                      <option value="GMC">GMC</option>
+                      <option value="Honda">Honda</option>
+                      <option value="Hyundai">Hyundai</option>
+                      <option value="Infiniti">Infiniti</option>
+                      <option value="Jaguar">Jaguar</option>
+                      <option value="Jeep">Jeep</option>
+                      <option value="Kia">Kia</option>
+                      <option value="Land Rover">Land Rover</option>
+                      <option value="Lexus">Lexus</option>
+                      <option value="Lincoln">Lincoln</option>
+                      <option value="Mazda">Mazda</option>
+                      <option value="Mercedes-Benz">Mercedes-Benz</option>
+                      <option value="MINI">MINI</option>
+                      <option value="Mitsubishi">Mitsubishi</option>
+                      <option value="Nissan">Nissan</option>
+                      <option value="Porsche">Porsche</option>
+                      <option value="Ram">Ram</option>
+                      <option value="Subaru">Subaru</option>
+                      <option value="Tesla">Tesla</option>
+                      <option value="Toyota">Toyota</option>
+                      <option value="Volkswagen">Volkswagen</option>
+                      <option value="Volvo">Volvo</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="vehicle-model">Model</label>
+                    <select id="vehicle-model" class="form-control" disabled>
+                      <option value="" disabled selected>Select Model</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="vehicle-year">Year</label>
+                    <select id="vehicle-year" class="form-control">
+                      <option value="" disabled selected>Select Year</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="vehicle-trim">Trim (Optional)</label>
+                    <input type="text" id="vehicle-trim" class="form-control" placeholder="e.g. SE, Limited">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="vehicle-condition">Vehicle Condition</label>
+                  <select id="vehicle-condition" class="form-control">
+                    <option value="operable" selected>Operable</option>
+                    <option value="inoperable">Inoperable</option>
+                    <option value="modified">Modified</option>
+                    <option value="salvage">Salvage</option>
+                  </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label style="font-weight: 600; margin-bottom: 8px; display: block;">Additional Options</label>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                      <input type="checkbox" id="vehicle-opt-runs" style="accent-color: var(--accent-shipper);"> Runs and Drives
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                      <input type="checkbox" id="vehicle-opt-keys" style="accent-color: var(--accent-shipper);"> Has Keys
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                      <input type="checkbox" id="vehicle-opt-convertible" style="accent-color: var(--accent-shipper);"> Convertible
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                      <input type="checkbox" id="vehicle-opt-lifted" style="accent-color: var(--accent-shipper);"> Lifted
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                      <input type="checkbox" id="vehicle-opt-lowered" style="accent-color: var(--accent-shipper);"> Lowered
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. MOTORCYCLE TRANSPORT SUB-FORM -->
+            <div id="form-section-motorcycle" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Motorcycle Details</h4>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="moto-year">Year</label>
+                  <select id="moto-year" class="form-control"></select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="moto-make">Make</label>
+                  <input type="text" id="moto-make" class="form-control" placeholder="e.g. Harley-Davidson">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="moto-model">Model</label>
+                  <input type="text" id="moto-model" class="form-control" placeholder="e.g. Cruiser">
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="moto-condition">Condition</label>
+                <select id="moto-condition" class="form-control">
+                  <option value="operable" selected>Operable</option>
+                  <option value="inoperable">Inoperable</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 3. FREIGHT SUB-FORM -->
+            <div id="form-section-freight" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Freight Details</h4>
+              
+              <div class="form-group">
+                <label for="freight-commodity">Commodity Type</label>
+                <select id="freight-commodity" class="form-control">
+                  <option value="" disabled selected>Select Commodity Type</option>
+                  <option value="Industrial Machinery">Industrial Machinery</option>
+                  <option value="Dry Food & Beverages">Dry Food & Beverages</option>
+                  <option value="Refrigerated Produce">Refrigerated Produce</option>
+                  <option value="Consumer Electronics">Consumer Electronics</option>
+                  <option value="Steel & Raw Metals">Steel & Raw Metals</option>
+                  <option value="Chemicals (Hazardous)">Chemicals (Hazardous)</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="freight-pallets">Number of Pallets</label>
+                  <input type="number" id="freight-pallets" class="form-control" placeholder="e.g. 4" min="0">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="freight-weight">Total Weight (lbs)</label>
+                  <input type="number" id="freight-weight" class="form-control" placeholder="e.g. 8000" min="1">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="freight-dimensions">Dimensions</label>
+                <input type="text" id="freight-dimensions" class="form-control" placeholder="e.g. 40x8x8 ft">
+              </div>
+
+              <div class="form-group" style="margin-bottom: 0;">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Freight Settings</label>
+                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                    <input type="checkbox" id="freight-stackable" style="accent-color: var(--accent-shipper);"> Stackable
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                    <input type="checkbox" id="freight-hazmat" style="accent-color: var(--accent-shipper);"> Hazmat
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                    <input type="checkbox" id="freight-liftgate" style="accent-color: var(--accent-shipper);"> Liftgate Required
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. HOUSEHOLD MOVE SUB-FORM -->
+            <div id="form-section-household" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Household Move Details</h4>
+              
+              <div class="form-group">
+                <label for="household-size">Move Size</label>
+                <select id="household-size" class="form-control">
+                  <option value="" disabled selected>Select Move Size</option>
+                  <option value="Studio">Studio</option>
+                  <option value="1 Bedroom">1 Bedroom</option>
+                  <option value="2 Bedroom">2 Bedroom</option>
+                  <option value="3 Bedroom">3 Bedroom</option>
+                  <option value="4 Bedroom">4 Bedroom</option>
+                  <option value="5+ Bedroom">5+ Bedroom</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 0;">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Services Required</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                    <input type="checkbox" id="household-packing" style="accent-color: var(--accent-shipper);"> Packing Required
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                    <input type="checkbox" id="household-loading" style="accent-color: var(--accent-shipper);"> Loading Required
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                    <input type="checkbox" id="household-unloading" style="accent-color: var(--accent-shipper);"> Unloading Required
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+                    <input type="checkbox" id="household-storage" style="accent-color: var(--accent-shipper);"> Storage Needed
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- 5. HEAVY EQUIPMENT SUB-FORM -->
+            <div id="form-section-equipment" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Heavy Equipment Details</h4>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="equipment-type">Equipment Type</label>
+                  <input type="text" id="equipment-type" class="form-control" placeholder="e.g. Excavator, Crane">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="equipment-condition">Operating Condition</label>
+                  <select id="equipment-condition" class="form-control">
+                    <option value="operable" selected>Operable</option>
+                    <option value="inoperable">Inoperable</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="equipment-make">Make</label>
+                  <input type="text" id="equipment-make" class="form-control" placeholder="e.g. Caterpillar">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="equipment-model">Model</label>
+                  <input type="text" id="equipment-model" class="form-control" placeholder="e.g. 320D">
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 0;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="equipment-weight">Weight (lbs)</label>
+                  <input type="number" id="equipment-weight" class="form-control" placeholder="e.g. 45000" min="1">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="equipment-dimensions">Dimensions</label>
+                  <input type="text" id="equipment-dimensions" class="form-control" placeholder="e.g. 30x10x10 ft">
+                </div>
+              </div>
+            </div>
+
+            <!-- 6. BOAT TRANSPORT SUB-FORM -->
+            <div id="form-section-boat" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Boat Details</h4>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="boat-make">Boat Make</label>
+                  <input type="text" id="boat-make" class="form-control" placeholder="e.g. Sea Ray">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="boat-model">Boat Model</label>
+                  <input type="text" id="boat-model" class="form-control" placeholder="e.g. Sundancer">
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="boat-length">Length (ft)</label>
+                  <input type="number" id="boat-length" class="form-control" placeholder="e.g. 25" min="1">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="boat-width">Width (ft)</label>
+                  <input type="number" id="boat-width" class="form-control" placeholder="e.g. 8" min="1" step="0.1">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="boat-height">Height (ft)</label>
+                  <input type="number" id="boat-height" class="form-control" placeholder="e.g. 7" min="1" step="0.1">
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="boat-trailer">Trailer Included</label>
+                <select id="boat-trailer" class="form-control">
+                  <option value="no" selected>No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 7. RV TRANSPORT SUB-FORM -->
+            <div id="form-section-rv" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">RV Details</h4>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="rv-type">RV Type</label>
+                  <select id="rv-type" class="form-control">
+                    <option value="" disabled selected>Select RV Type</option>
+                    <option value="Class A Motorhome">Class A Motorhome</option>
+                    <option value="Class B Motorhome">Class B Motorhome</option>
+                    <option value="Class C Motorhome">Class C Motorhome</option>
+                    <option value="Travel Trailer">Travel Trailer</option>
+                    <option value="Fifth Wheel">Fifth Wheel</option>
+                    <option value="Toy Hauler">Toy Hauler</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="rv-year">Year</label>
+                  <select id="rv-year" class="form-control">
+                    <option value="" disabled selected>Select Year</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="rv-make">Make</label>
+                  <input type="text" id="rv-make" class="form-control" placeholder="e.g. Winnebago">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="rv-model">Model</label>
+                  <input type="text" id="rv-model" class="form-control" placeholder="e.g. Vista">
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 0;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="rv-length">Length (ft)</label>
+                  <input type="number" id="rv-length" class="form-control" placeholder="e.g. 30" min="1">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="rv-operable">Operable</label>
+                  <select id="rv-operable" class="form-control">
+                    <option value="yes" selected>Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 8. OTHER SUB-FORM -->
+            <div id="form-section-other" class="form-type-section d-none" style="margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 96%);">
+              <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-shipper); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Other Details</h4>
+              
+              <div class="form-group">
+                <label for="other-cargo-type">Commodity/Cargo Type</label>
+                <input type="text" id="other-cargo-type" class="form-control" placeholder="e.g. Custom parts, palletized goods">
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 0;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="other-weight">Weight (lbs)</label>
+                  <input type="number" id="other-weight" class="form-control" placeholder="e.g. 500" min="1">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="other-dimensions">Dimensions</label>
+                  <input type="text" id="other-dimensions" class="form-control" placeholder="e.g. 5x5x5 ft">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-date-grid">
+              <div class="form-group">
+                <label for="ship-pickup">Pickup Date</label>
+                <input type="date" id="ship-pickup" class="form-control" required>
+              </div>
+              <div class="form-group">
+                <label for="ship-delivery">Drop-off Date</label>
+                <input type="date" id="ship-delivery" class="form-control" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="ship-priority">Shipment Priority</label>
+              <select id="ship-priority" class="form-control">
+                <option value="flexible" selected>Flexible (Standard Listing)</option>
+                <option value="priority">Priority (Urgent Shipment)</option>
+                <option value="expedited">Expedited (Time-Critical Delivery)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="ship-equipment">Equipment Required</label>
+              <select id="ship-equipment" class="form-control" required>
+                <option value="" disabled selected>Select Equipment</option>
+                <option value="Dry Van">Dry Van</option>
+                <option value="Flatbed">Flatbed</option>
+                <option value="Hotshot">Hotshot</option>
+                <option value="Car Hauler">Car Hauler</option>
+                <option value="Enclosed Trailer">Enclosed Trailer</option>
+                <option value="Step Deck">Step Deck</option>
+                <option value="RGN">RGN</option>
+                <option value="Box Truck">Box Truck</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="ship-budget">Max Budget ($)</label>
+              <input type="number" id="ship-budget" class="form-control" placeholder="e.g. 2500" min="1" required>
+            </div>
+
+            <div class="form-group">
+              <label>Shipment Photos (Max 10 images, 10MB each)</label>
+              <div class="photo-upload-dropzone" id="photo-dropzone">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 8px; color: var(--accent-shipper);">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <span>Click to Upload Photos</span>
+                <input type="file" id="ship-photos" multiple accept=".jpg,.jpeg,.png,.webp" style="display: none;">
+              </div>
+              <div id="photo-previews" class="photo-previews-container"></div>
+            </div>
+
+            <div class="form-group">
+              <label for="ship-description">Cargo Description</label>
+              <textarea id="ship-description" class="form-control" placeholder="Enter dimensions details, loading instructions, specialized trailer requirements, etc." rows="4"></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Create Listing</button>
+          </form>
+        </div>
+      </aside>
+
+      <!-- Right Column: Listings & Active Bids -->
+      <div class="dashboard-main">
+        <div class="flex-space-between">
+          <h2 style="font-size: 28px; font-weight: 700;">Shipper Board</h2>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-outline btn-sm active" id="shipper-filter-all">All</button>
+            <button class="btn btn-outline btn-sm" id="shipper-filter-open">Open</button>
+            <button class="btn btn-outline btn-sm" id="shipper-filter-assigned">Assigned</button>
+            <button class="btn btn-outline btn-sm" id="shipper-filter-completed">Delivered</button>
+          </div>
+        </div>
+
+        <div class="shipments-list" id="shipper-board-list">
+          <!-- Dynamically generated shipper shipments cards with bids lists -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. CARRIER DASHBOARD VIEW -->
+    <section id="carrier-view" class="dashboard-layout d-none">
+      <!-- Left Column: Active bids tracker -->
+      <aside class="dashboard-sidebar">
+        <!-- Carrier Status summary -->
+        <div class="card carrier-accent">
+          <h3 class="mb-24" style="font-size: 20px; font-weight: 700;">My Active Jobs</h3>
+          <div id="carrier-jobs-list" style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- Dynamically populated carrier active jobs -->
+          </div>
+        </div>
+
+        <!-- Bids submitted by this carrier -->
+        <div class="card carrier-accent">
+          <h3 class="mb-24" style="font-size: 20px; font-weight: 700;">My Bids</h3>
+          <div id="carrier-bids-list" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Dynamically populated carrier bids status -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Column: Shipment marketplace board -->
+      <div class="dashboard-main">
+        <div class="flex-space-between" style="flex-wrap: wrap; gap: 16px;">
+          <h2 style="font-size: 28px; font-weight: 700;">Shipment Marketplace</h2>
+          <div class="filters-bar">
+            <!-- Search bar -->
+            <div class="search-input-wrapper">
+              <svg style="position: absolute; left: 14px; top: 13px; color: var(--text-muted);" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="carrier-search" class="form-control" placeholder="Search by origin or destination..." style="padding-left: 38px;">
+            </div>
+            
+            <!-- Shipment type filter -->
+            <select id="carrier-filter-type" class="form-control" style="width: auto; min-width: 160px;">
+              <option value="all">All Shipment Types</option>
+              <option value="Vehicle Transport">Vehicle Transport</option>
+              <option value="Motorcycle Transport">Motorcycle Transport</option>
+              <option value="Freight">Freight</option>
+              <option value="Household Move">Household Move</option>
+              <option value="Heavy Equipment">Heavy Equipment</option>
+              <option value="Boat Transport">Boat Transport</option>
+              <option value="RV Transport">RV Transport</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="shipments-list" id="carrier-board-list">
+          <!-- Dynamically generated list of open shipments available for bids -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. DEDICATED LOAD BOARD VIEW -->
+    <section id="loadboard-view" class="dashboard-layout d-none">
+      <!-- Left Column: Search & Filters -->
+      <aside class="dashboard-sidebar">
+        <div class="card shipper-accent">
+          <h3 class="mb-24" style="font-size: 20px; font-weight: 700;">Find Shipments</h3>
+          <form id="loadboard-filter-form">
+            <div class="form-group">
+              <label for="board-filter-keyword">Keyword Search</label>
+              <input type="text" id="board-filter-keyword" class="form-control" placeholder="Search description, make, model...">
+            </div>
+            <div class="form-group">
+              <label for="board-filter-origin">Pickup Location</label>
+              <input type="text" id="board-filter-origin" class="form-control" placeholder="City, state, or zip...">
+            </div>
+            <div class="form-group">
+              <label for="board-filter-destination">Delivery Location</label>
+              <input type="text" id="board-filter-destination" class="form-control" placeholder="City, state, or zip...">
+            </div>
+            <div class="form-group">
+              <label for="board-filter-type">Shipment Type</label>
+              <select id="board-filter-type" class="form-control">
+                <option value="all">All Shipment Types</option>
+                <option value="Vehicle Transport">Vehicle Transport</option>
+                <option value="Motorcycle Transport">Motorcycle Transport</option>
+                <option value="Freight">Freight</option>
+                <option value="Household Move">Household Move</option>
+                <option value="Heavy Equipment">Heavy Equipment</option>
+                <option value="Boat Transport">Boat</option>
+                <option value="RV Transport">RV</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="board-filter-weight-min">Min Weight (lbs)</label>
+                <input type="number" id="board-filter-weight-min" class="form-control" placeholder="e.g. 0">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="board-filter-weight-max">Max Weight (lbs)</label>
+                <input type="number" id="board-filter-weight-max" class="form-control" placeholder="e.g. 80000">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="board-filter-date">Pickup Date</label>
+              <input type="date" id="board-filter-date" class="form-control">
+            </div>
+            <div class="form-group">
+              <label for="board-filter-priority">Shipment Priority</label>
+              <select id="board-filter-priority" class="form-control">
+                <option value="all" selected>All Priorities</option>
+                <option value="priority">Priority</option>
+                <option value="flexible">Flexible</option>
+                <option value="expedited">Expedited</option>
+              </select>
+            </div>
+            <button type="button" id="board-filter-reset" class="btn btn-outline btn-sm" style="width: 100%; margin-top: 12px;">Reset Filters</button>
+          </form>
+        </div>
+      </aside>
+
+      <!-- Right Column: Active Load Board -->
+      <div class="dashboard-main">
+        <div class="flex-space-between" style="flex-wrap: wrap; gap: 16px;">
+          <div>
+            <h2 style="font-size: 28px; font-weight: 700;">Freight Load Board</h2>
+            <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;" id="loadboard-results-count">Showing 0 shipments</p>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <select id="board-sort-by" class="form-control" style="width: auto; min-width: 180px; padding: 8px 12px; font-size: 14px;">
+              <option value="newest">Newest First</option>
+              <option value="budget-high">Highest Budget</option>
+              <option value="budget-low">Lowest Budget</option>
+              <option value="date-earliest">Earliest Pickup</option>
+            </select>
+            <div class="dropdown-columns-wrapper" style="position: relative;">
+              <button class="btn btn-outline btn-sm dropdown-toggle" id="btn-toggle-columns" style="display: flex; align-items: center; gap: 6px; padding: 10px 14px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                Columns
+              </button>
+              <div class="dropdown-menu-columns d-none" id="dropdown-columns-list" style="position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 12px; z-index: 100; min-width: 200px; display: flex; flex-direction: column; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-pickup" checked> Pickup Location
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-delivery" checked> Delivery Location
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-distance" checked> Distance
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-budget" checked> Budget
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-weight" checked> Weight
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-type" checked> Shipment Type
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-priority" checked> Priority
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-equipment" checked> Equipment Required
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-bids" checked> Bids
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+                  <input type="checkbox" class="col-toggle-checkbox" data-column="col-date" checked> Pickup Date
+                </label>
+              </div>
+            </div>
+            <div class="toggle-view-buttons">
+              <button class="toggle-btn" id="toggle-view-card" title="Card Grid View">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+              </button>
+              <button class="toggle-btn active" id="toggle-view-table" title="Table Load Board View">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="3" y1="6" x2="21" y2="6"></line>
+                  <line x1="3" y1="12" x2="21" y2="12"></line>
+                  <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table View Container -->
+        <div id="loadboard-table-container" class="loadboard-table-wrapper">
+          <table class="loadboard-table">
+            <thead>
+              <tr>
+                <th class="col-pickup">Pickup Location</th>
+                <th class="col-delivery">Delivery Location</th>
+                <th class="col-distance">Distance</th>
+                <th class="col-budget">Budget</th>
+                <th class="col-weight">Weight</th>
+                <th class="col-type">Shipment Type</th>
+                <th class="col-priority">Priority</th>
+                <th class="col-equipment">Equipment Required</th>
+                <th class="col-bids">Bids</th>
+                <th class="col-date">Pickup Date</th>
+                <th class="col-details">View Load</th>
+              </tr>
+            </thead>
+            <tbody id="loadboard-table-body">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Card View Container (hidden by default) -->
+        <div id="loadboard-cards-container" class="shipments-list d-none">
+          <!-- Dynamically populated cards -->
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="pagination-wrapper" id="loadboard-pagination">
+          <!-- Dynamically generated page buttons -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 5. SUBMIT BID MODAL -->
+  <div id="bid-modal" class="modal-backdrop">
+    <div class="card modal-card carrier-accent">
+      <div class="modal-header">
+        <h3 style="font-size: 22px; font-weight: 700;">Place Your Bid</h3>
+        <button class="modal-close-btn" id="close-bid-modal">&times;</button>
+      </div>
+
+      <div class="mb-24" style="background-color: hsl(210, 20%, 96%); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+        <div style="font-weight: 600; font-size: 14px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">Selected Shipment</div>
+        <div style="font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+          <span id="bid-modal-origin">Chicago, IL</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+          <span id="bid-modal-destination">Houston, TX</span>
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted); margin-top: 8px;" id="bid-modal-cargo-spec">
+          Industrial Machinery | 18,500 lbs | Budget: $4,200
+        </div>
+      </div>
+
+      <form id="bid-form">
+        <input type="hidden" id="bid-shipment-id">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="bid-amount">Bid Amount ($)</label>
+            <input type="number" id="bid-amount" class="form-control" placeholder="e.g. 3900" min="1" required>
+          </div>
+
+          <div class="form-group">
+            <label for="bid-delivery-date">Proposed Delivery Date</label>
+            <input type="date" id="bid-delivery-date" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="bid-message">Message to Shipper</label>
+          <textarea id="bid-message" class="form-control" placeholder="Explain your capabilities, trailer type, tracking service or references..." rows="4"></textarea>
+        </div>
+
+        <div id="bid-error" style="color: var(--color-rejected); font-size: 14px; margin-bottom: 16px;" class="d-none"></div>
+
+        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+          <button type="button" class="btn btn-outline" id="cancel-bid-submit">Cancel</button>
+          <button type="submit" class="btn btn-secondary">Submit Offer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 6. SHIPMENT DETAILS / ROUTE MODAL -->
+  <div id="details-modal" class="modal-backdrop">
+    <div class="card modal-card shipper-accent" id="details-modal-card">
+      <div class="modal-header">
+        <h3 style="font-size: 22px; font-weight: 700;">Shipment Breakdown</h3>
+        <button class="modal-close-btn" id="close-details-modal">&times;</button>
+      </div>
+
+      <!-- 1. Interactive Route Map -->
+      <div id="details-map-container" style="position: relative; width: 100%; height: 280px; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 20px; border: 1px solid var(--border-color);">
+        <div id="details-map" style="width: 100%; height: 100%;"></div>
+        <!-- Route Metrics Overlay (Floating Premium Card) -->
+        <div id="route-metrics-card" class="d-none" style="position: absolute; bottom: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.92); backdrop-filter: blur(8px); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); font-size: 12px; box-shadow: var(--shadow-sm); display: flex; gap: 12px;">
+          <div><strong>Distance:</strong> <span id="route-metric-distance">--</span></div>
+          <div><strong>Est. Time:</strong> <span id="route-metric-duration">--</span></div>
+        </div>
+      </div>
+
+      <!-- 2. Shipment Photos -->
+      <!-- Cover Image Banner (hidden if no cover) -->
+      <div id="details-cover-wrapper" class="details-cover-container d-none" style="margin-bottom: 20px;">
+        <img id="details-cover-img" src="" alt="Shipment Cover Image">
+      </div>
+      <!-- Shipment Photos Gallery -->
+      <div id="details-gallery-box" class="d-none" style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-bottom: 24px;">
+        <h4 style="font-size: 13px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; font-weight: 700; letter-spacing: 0.5px;">Shipment Photos</h4>
+        <div id="details-gallery-grid" class="details-gallery-grid">
+          <!-- Dynamically populated thumbnails -->
+        </div>
+      </div>
+
+      <!-- 3. Pickup & Delivery Information -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; border-top: 1px solid var(--border-color); padding-top: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 20px;">
+        <div>
+          <h4 style="font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; font-weight: 700; letter-spacing: 0.5px;">Pickup Address</h4>
+          <div id="details-origin" style="font-size: 15px; font-weight: 600; color: var(--text-main);">Chicago, IL</div>
+          <div id="details-origin-coords" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;"></div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Target Pickup: <span id="details-pickup" style="font-weight: 600; color: var(--text-main);">2026-07-02</span></div>
+        </div>
+        <div>
+          <h4 style="font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; font-weight: 700; letter-spacing: 0.5px;">Delivery Address</h4>
+          <div id="details-destination" style="font-size: 15px; font-weight: 600; color: var(--text-main);">Houston, TX</div>
+          <div id="details-destination-coords" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;"></div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Target Drop-off: <span id="details-dropoff" style="font-weight: 600; color: var(--text-main);">2026-07-05</span></div>
+        </div>
+      </div>
+
+      <!-- 4. Shipment Details Overview -->
+      <div style="background-color: hsl(210, 20%, 96%); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px;">
+        <div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Shipment Type</div>
+          <div style="font-weight: 600; font-size: 14px;" id="details-cargo">Industrial</div>
+        </div>
+        <div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Weight</div>
+          <div style="font-weight: 600; font-size: 14px;" id="details-weight">18,500 lbs</div>
+        </div>
+        <div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Dimensions</div>
+          <div style="font-weight: 600; font-size: 14px;" id="details-dimensions">48x8x8 ft</div>
+        </div>
+      </div>
+
+      <!-- Dynamic Specifications Box -->
+      <div id="details-specifications-box" class="d-none" style="background-color: hsl(210, 20%, 96%); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; margin-bottom: 20px;">
+        <!-- Dynamically populated via JS -->
+      </div>
+
+      <!-- 5. Description -->
+      <div style="margin-bottom: 24px;">
+        <h4 style="font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; font-weight: 700; letter-spacing: 0.5px;">Description</h4>
+        <p style="font-size: 15px; color: var(--text-main); line-height: 1.5;" id="details-description">No details provided.</p>
+      </div>
+
+      <!-- 6. Shipper Contact Card (after award only) -->
+      <div id="details-shipper-card" class="d-none" style="border: 1px solid var(--border-color); border-radius: var(--radius-md); background: rgba(24, 160, 240, 0.05); padding: 18px; margin-bottom: 20px;">
+        <h4 style="font-size: 13px; text-transform: uppercase; color: var(--accent-shipper); margin-bottom: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px;">💼 Shipper Contact Information</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 14px;">
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Contact Name</span>
+            <strong id="details-shipper-contact-name">John Doe</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Company Name</span>
+            <strong id="details-shipper-company">Atlas Freight Inc</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Phone Number</span>
+            <strong id="details-shipper-phone">1-800-555-0100</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Email Address</span>
+            <strong id="details-shipper-email">shipper@example.com</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. Carrier Contact Card (after award only) -->
+      <div id="details-carrier-card" class="d-none" style="border: 1px solid var(--border-color); border-radius: var(--radius-md); background: rgba(34, 197, 94, 0.05); padding: 18px; margin-bottom: 20px;">
+        <h4 style="font-size: 13px; text-transform: uppercase; color: var(--accent-carrier); margin-bottom: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px;">🚚 Assigned Carrier Contact Information</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 14px;">
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Company Name</span>
+            <strong id="details-carrier-company">Titan Trucking</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Contact Person</span>
+            <strong id="details-carrier-contact-name">Robert Titan</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Phone Number</span>
+            <strong id="details-carrier-phone">1-800-555-0200</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block; font-size: 12px;">Email Address</span>
+            <strong id="details-carrier-email">carrier@example.com</strong>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; background-color: rgba(24, 160, 240, 0.05); border: 1px dashed rgba(24, 160, 240, 0.2); border-radius: var(--radius-md); padding: 16px; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <span style="font-size: 12px; color: var(--text-muted); display: block;">Maximum Budget</span>
+          <span style="font-size: 24px; font-weight: 700; color: var(--accent-shipper);" id="details-budget">$4,200</span>
+        </div>
+        <div>
+          <span style="font-size: 12px; color: var(--text-muted); display: block; text-align: center;">Posted Age</span>
+          <span style="font-size: 16px; font-weight: 600; color: var(--text-main); display: block; text-align: center; margin-top: 4px;" id="details-posted">--</span>
+        </div>
+        <div>
+          <span style="font-size: 12px; color: var(--text-muted); display: block; text-align: right;">Listing Status</span>
+          <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px; justify-content: flex-end;">
+            <span class="status-badge open" id="details-status">Open</span>
+            <span class="priority-badge flexible" id="details-priority">Flexible</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="btn btn-outline" id="close-details-footer">Close</button>
+        <button class="btn btn-secondary" id="details-bid-btn">Place Bid Offer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. PHOTO GALLERY LIGHTBOX MODAL -->
+  <div id="lightbox-modal" class="modal-backdrop">
+    <div class="lightbox-card">
+      <button class="lightbox-close-btn" id="close-lightbox-modal">&times;</button>
+      <div class="lightbox-content">
+        <button class="lightbox-nav-btn prev" id="lightbox-prev" title="Previous Image">&#10094;</button>
+        <img id="lightbox-img" src="" alt="Enlarged Shipment Photo">
+        <button class="lightbox-nav-btn next" id="lightbox-next" title="Next Image">&#10095;</button>
+      </div>
+      <div id="lightbox-index" class="lightbox-index-counter">Image 1 of 1</div>
+    </div>
+  </div>
+
+  <!-- 8. NEGOTIATION / CHAT MODAL -->
+  <div id="negotiation-modal" class="modal-backdrop">
+    <div class="card modal-card" id="negotiation-modal-card" style="max-width: 600px; width: 100%;">
+      <div class="modal-header">
+        <div>
+          <h3 style="font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+            💬 Negotiation for Load #<span id="neg-shipment-id">--</span>
+          </h3>
+          <span id="neg-partner-name" style="font-size: 13px; color: var(--text-muted); font-weight: 600;">--</span>
+        </div>
+        <button class="modal-close-btn" id="close-negotiation-modal">&times;</button>
+      </div>
+
+      <!-- Active Offer Status Box -->
+      <div style="background-color: hsl(210, 20%, 96%); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span style="font-size: 12px; color: var(--text-muted); display: block;">Current Bid/Offer</span>
+          <strong style="font-size: 20px; color: var(--accent-carrier);" id="neg-current-amount">$--</strong>
+        </div>
+        <div style="text-align: right;">
+          <span style="font-size: 12px; color: var(--text-muted); display: block;">Shipment Budget</span>
+          <strong style="font-size: 16px; color: var(--text-main);" id="neg-shipment-budget">$--</strong>
+        </div>
+      </div>
+
+      <!-- Chat / Message History Container -->
+      <div id="neg-chat-history" style="height: 250px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px; background: #fafafa; display: flex; flex-direction: column; gap: 12px;">
+        <!-- Chat bubbles loaded dynamically -->
+      </div>
+
+      <!-- Warning Box for prohibited information (Violations warning) -->
+      <div id="neg-warning-alert" class="d-none" style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px; display: flex; gap: 8px; align-items: flex-start; color: #b45309; font-size: 13px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 2px;">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01" />
+        </svg>
+        <div>
+          <strong>Warning: Prohibited Information Blocked!</strong>
+          <span id="neg-warning-text" style="display: block; margin-top: 4px;">Sharing contact details (phone, email, MC/DOT, websites, coordinates) before award is strictly prohibited. Your account may be suspended.</span>
+          <span style="font-weight: 600; display: block; margin-top: 4px;">Active Violations Count: <span id="neg-violation-count">0</span></span>
+        </div>
+      </div>
+
+      <!-- Proposal/Input Forms -->
+      <div id="neg-action-panel" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="neg-text-input" class="form-control" placeholder="Type a message to negotiate..." style="flex-grow: 1;">
+          <button class="btn btn-primary" id="btn-neg-send-message">Send</button>
+        </div>
+        
+        <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <button class="btn btn-outline btn-sm" id="btn-toggle-counter-offer">Propose Counter Offer</button>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-outline btn-sm" id="btn-neg-reject" style="border-color: #ef4444; color: #ef4444;">Reject Offer</button>
+              <button class="btn btn-primary btn-sm" id="btn-neg-accept" style="background-color: #22c55e;">Accept Offer</button>
+            </div>
+          </div>
+          
+          <div id="counter-offer-panel" class="d-none" style="margin-top: 12px; padding: 12px; background: hsl(210, 20%, 96%); border: 1px solid var(--border-color); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <div style="position: relative; flex-grow: 1;">
+                <span style="position: absolute; left: 12px; top: 10px; font-weight: 600; color: var(--text-muted); font-size: 14px;">$</span>
+                <input type="number" id="neg-counter-amount" class="form-control" placeholder="Counter Amount" style="padding-left: 24px;" min="1">
+              </div>
+              <button class="btn btn-secondary" id="btn-neg-submit-counter">Submit Counter</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div id="neg-closed-panel" class="d-none" style="text-align: center; padding: 12px; font-weight: 600; color: var(--text-muted); background: hsl(210, 20%, 96%); border-radius: var(--radius-md);">
+        This negotiation has been finalized.
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    <span id="toast-message">Success!</span>
+  </div>
+
+  <!-- Application Scripts -->
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
