@@ -1,8 +1,19 @@
 // app.js - Controller logic for the Movana Transportation Marketplace
 
-// Monkey-patch Store.createShipment to persist equipmentRequired without modifying store.js
 (function() {
-  const originalCreateShipment = Store.createShipment;
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    console.warn("Movana app.js loaded in a non-browser environment. Skipping execution.");
+    return;
+  }
+  if (!window.Store) {
+    console.error("Store is not defined when app.js executed! Please load store.js before app.js.");
+    return;
+  }
+  const Store = window.Store;
+
+  // Monkey-patch Store.createShipment to persist equipmentRequired without modifying store.js
+  (function() {
+    const originalCreateShipment = Store.createShipment;
   Store.createShipment = function(shipperId, shipperName, shipmentData) {
     console.log("=== DEBUG: Store.createShipment CALLED ===");
     console.log("Form value received (equipmentRequired):", shipmentData.equipmentRequired);
@@ -6157,3 +6168,6 @@ function initApp() {
 
 // Initial Run
 initApp();
+
+})();
+
