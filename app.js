@@ -72,31 +72,196 @@
   };
 })();
 
-// Monkey-patch Store.addNegotiationMessage to support system flags without modifying store.js
+// Chronological timeline activity event logger
+function logShipmentEvent(shipmentId, eventType, label, desc, additional = {}) {
+  const stored = localStorage.getItem('movana_store_data');
+  if (!stored) return;
+  try {
+    const data = JSON.parse(stored);
+    const shipment = data.shipments.find(s => s.id === shipmentId);
+    if (shipment) {
+      if (!shipment.history) {
+        shipment.history = [
+          {
+            event: 'created',
+            label: 'Shipment Created',
+            desc: `Shipment listed on the marketplace with a budget of $${shipment.budget.toLocaleString()}.`,
+            timestamp: shipment.createdAt || new Date().toISOString()
+          }
+        ];
+      }
+      
+      // Prevent duplicate events for unique status transitions
+      if (['picked up', 'in transit', 'delivered', 'completed', 'awarded'].includes(eventType)) {
+        const exists = shipment.history.some(h => h.event === eventType);
+        if (exists) return;
+      }
+      
+      shipment.history.push({
+        event: eventType,
+        label,
+        desc,
+        timestamp: new Date().toISOString(),
+        ...additional
+      });
+      
+      localStorage.setItem('movana_store_data', JSON.stringify(data));
+      console.log(`[ACTIVITY LOG] Logged event '${eventType}' for Shipment ${shipmentId}`);
+    }
+  } catch (e) {
+    console.error('Error logging shipment event', e);
+  }
+}
+
+// Monkey-patch Store.addNegotiationMessage to support system flags, custom fields, and attachments
 (function() {
   const originalAddNegMsg = Store.addNegotiationMessage;
-  Store.addNegotiationMessage = function(bidId, senderId, senderName, message, amount = null, isSystem = false) {
+  Store.addNegotiationMessage = function(bidId, senderId, senderName, message, amount = null, isSystem = false, additionalFields = null) {
     const result = originalAddNegMsg.call(this, bidId, senderId, senderName, message, amount);
     
-    if (isSystem) {
-      const stored = localStorage.getItem('movana_store_data');
-      if (stored) {
-        try {
-          const data = JSON.parse(stored);
-          const neg = data.negotiations.find(n => n.bidId === bidId);
-          if (neg && neg.messages.length > 0) {
-            neg.messages[neg.messages.length - 1].isSystem = true;
-            localStorage.setItem('movana_store_data', JSON.stringify(data));
+    const stored = localStorage.getItem('movana_store_data');
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        const neg = data.negotiations.find(n => n.bidId === bidId);
+        if (neg && neg.messages.length > 0) {
+          const latestMsg = neg.messages[neg.messages.length - 1];
+          if (isSystem) {
+            latestMsg.isSystem = true;
           }
-        } catch (e) {
-          console.error('Error in monkey-patched addNegotiationMessage', e);
+          if (additionalFields) {
+            latestMsg.pickupDate = additionalFields.pickupDate || null;
+            latestMsg.deliveryDate = additionalFields.deliveryDate || null;
+            latestMsg.trailerType = additionalFields.trailerType || null;
+            latestMsg.notes = additionalFields.notes || null;
+            latestMsg.imageAttachment = additionalFields.imageAttachment || null;
+          }
+          localStorage.setItem('movana_store_data', JSON.stringify(data));
         }
+      } catch (e) {
+        console.error('Error in monkey-patched addNegotiationMessage', e);
       }
-      if (result && result.messages.length > 0) {
-        result.messages[result.messages.length - 1].isSystem = true;
+    }
+    
+    if (result && result.messages.length > 0) {
+      const latestMsg = result.messages[result.messages.length - 1];
+      if (isSystem) {
+        latestMsg.isSystem = true;
+      }
+      if (additionalFields) {
+        latestMsg.pickupDate = additionalFields.pickupDate || null;
+        latestMsg.deliveryDate = additionalFields.deliveryDate || null;
+        latestMsg.trailerType = additionalFields.trailerType || null;
+        latestMsg.notes = additionalFields.notes || null;
+        latestMsg.imageAttachment = additionalFields.imageAttachment || null;
       }
     }
     return result;
+  };
+})();
+
+// Monkey-patch Store.registerUser to save custom fields and handle proper registration storage
+(function() {
+  Store.registerUser = function(username, password, role, companyName, additionalData = {}) {
+    console.log("=== DEBUG: Store.registerUser CALLED ===");
+    console.log("Username:", username);
+    console.log("Role:", role);
+    console.log("Additional Data:", JSON.stringify(additionalData, null, 2));
+
+    const rawDataStr = localStorage.getItem('movana_store_data');
+    let rawData = {
+      users: [],
+      shipments: [],
+      bids: [],
+      negotiations: [],
+      violations: [],
+      currentUser: null
+    };
+
+    if (rawDataStr) {
+      try {
+        rawData = JSON.parse(rawDataStr);
+      } catch (e) {
+        console.error("Failed to parse raw data from localstorage", e);
+      }
+    }
+
+    if (!rawData.users) rawData.users = [];
+
+    // Check unique username (case-insensitive)
+    const existing = rawData.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (existing) {
+      console.warn(`Registration failed: Username '${username}' already exists.`);
+      throw new Error('Username already exists. Please choose another.');
+    }
+
+    const newUser = {
+      id: `u_${Math.random().toString(36).substr(2, 9)}`,
+      username: username,
+      password: password, // case-sensitive password is saved exactly
+      role: role,
+      contactName: additionalData.contactName || username,
+      companyName: companyName || `${username}'s Freight`,
+      email: additionalData.email || `${username}@movanamarketplace.com`,
+      phone: additionalData.phone || '1-800-555-0100',
+      createdAt: new Date().toISOString(),
+      dateCreated: new Date().toISOString()
+    };
+
+    if (role === 'carrier') {
+      newUser.mcNumber = additionalData.mcNumber || '';
+      newUser.dotNumber = additionalData.dotNumber || '';
+      newUser.equipmentTypes = additionalData.equipmentTypes || [];
+    }
+
+    console.log("User object before save:", JSON.stringify(newUser, null, 2));
+
+    // Save
+    rawData.users.push(newUser);
+    rawData.currentUser = newUser;
+    localStorage.setItem('movana_store_data', JSON.stringify(rawData));
+
+    // Update the in-memory Store state
+    Store.setCurrentUser(newUser);
+
+    console.log("User object after save: successfully saved to local storage.");
+    console.log("==========================================");
+
+    return newUser;
+  };
+})();
+
+// Monkey-patch Store.loginUser to add detailed console logs and verify authentication
+(function() {
+  const originalLoginUser = Store.loginUser;
+  Store.loginUser = function(username, password) {
+    console.log("=== DEBUG: Store.loginUser CALLED ===");
+    console.log("Username entered:", username);
+    console.log("Password length entered:", password ? password.length : 0);
+
+    try {
+      const result = originalLoginUser.call(this, username, password);
+      console.log("Login successful! User object returned:", JSON.stringify(result, null, 2));
+      console.log("==========================================");
+      return result;
+    } catch (e) {
+      console.error("Login failed with error:", e.message);
+      console.log("==========================================");
+      throw e;
+    }
+  };
+})();
+
+// Monkey-patch Store.logout to add detailed console logs
+(function() {
+  const originalLogout = Store.logout;
+  Store.logout = function() {
+    console.log("=== DEBUG: Store.logout CALLED ===");
+    const currentUser = Store.getCurrentUser();
+    console.log("Logging out user:", currentUser ? currentUser.username : "none");
+    originalLogout.call(this);
+    console.log("Logout successful! Current user is now null.");
+    console.log("==========================================");
   };
 })();
 
@@ -697,6 +862,166 @@ function declineCounterOffer(bidId, amount) {
   }
 }
 
+function openCounterOfferModal(bidId) {
+  const currentUser = Store.getCurrentUser();
+  const bid = Store.getBids().find(b => b.id === bidId);
+  if (!bid) return;
+  const shipment = Store.getShipment(bid.shipmentId);
+  if (!shipment) return;
+
+  const neg = Store.getNegotiationForBid(bidId);
+  let initialPrice = bid.amount;
+  let initialPickupDate = shipment.pickupDate || "";
+  let initialDeliveryDate = shipment.deliveryDate || "";
+  let initialTrailerType = shipment.equipmentRequired || "Dry Van";
+  
+  if (neg && neg.messages) {
+    const counterMsgs = neg.messages.filter(m => m.amount !== null && !m.isSystem);
+    if (counterMsgs.length > 0) {
+      const latestCounter = counterMsgs[counterMsgs.length - 1];
+      initialPrice = latestCounter.amount;
+      if (latestCounter.pickupDate) initialPickupDate = latestCounter.pickupDate;
+      if (latestCounter.deliveryDate) initialDeliveryDate = latestCounter.deliveryDate;
+      if (latestCounter.trailerType) initialTrailerType = latestCounter.trailerType;
+    }
+  }
+
+  const formatYYYYMMDD = (dStr) => {
+    if (!dStr) return "";
+    try {
+      const d = new Date(dStr);
+      if (isNaN(d.getTime())) return "";
+      return d.toISOString().split('T')[0];
+    } catch (e) {
+      return "";
+    }
+  };
+
+  const formattedPickup = formatYYYYMMDD(initialPickupDate);
+  const formattedDelivery = formatYYYYMMDD(initialDeliveryDate);
+
+  const modalHtml = `
+    <div id="counter-offer-modal" class="modal-backdrop active" style="z-index: 10000; display: flex; justify-content: center; align-items: center; background: rgba(15,23,42,0.6);">
+      <div class="card modal-card" style="max-width: 460px; width: 100%; padding: 24px; background: white; border-radius: var(--radius-lg); position: relative; box-shadow: var(--shadow-lg); text-align: left;">
+        <h3 style="font-size: 18px; font-weight: 800; margin-bottom: 16px; color: var(--text-main); margin-top: 0;">Propose Counter Offer</h3>
+        
+        <form id="counter-offer-form" style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="form-group">
+            <label for="counter-price" style="font-weight: 600; font-size: 12px; margin-bottom: 6px; display: block; color: var(--text-main);">Proposed Price ($)</label>
+            <div style="position: relative;">
+              <span style="position: absolute; left: 12px; top: 10px; font-weight: 600; color: var(--text-muted); font-size: 14px;">$</span>
+              <input type="number" id="counter-price" class="form-control" style="padding-left: 24px;" min="1" value="${initialPrice}" required>
+            </div>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label for="counter-pickup-date" style="font-weight: 600; font-size: 12px; margin-bottom: 6px; display: block; color: var(--text-main);">Est. Pickup Date</label>
+              <input type="date" id="counter-pickup-date" class="form-control" value="${formattedPickup}" required>
+            </div>
+            <div class="form-group">
+              <label for="counter-delivery-date" style="font-weight: 600; font-size: 12px; margin-bottom: 6px; display: block; color: var(--text-main);">Est. Delivery Date</label>
+              <input type="date" id="counter-delivery-date" class="form-control" value="${formattedDelivery}" required>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="counter-trailer-type" style="font-weight: 600; font-size: 12px; margin-bottom: 6px; display: block; color: var(--text-main);">Trailer / Equipment Type</label>
+            <select id="counter-trailer-type" class="form-control" required style="-webkit-appearance: listbox;">
+              <option value="Dry Van" ${initialTrailerType === 'Dry Van' ? 'selected' : ''}>Dry Van</option>
+              <option value="Reefer" ${initialTrailerType === 'Reefer' ? 'selected' : ''}>Reefer</option>
+              <option value="Flatbed" ${initialTrailerType === 'Flatbed' ? 'selected' : ''}>Flatbed</option>
+              <option value="Hotshot" ${initialTrailerType === 'Hotshot' ? 'selected' : ''}>Hotshot</option>
+              <option value="Car Hauler" ${initialTrailerType === 'Car Hauler' ? 'selected' : ''}>Car Hauler</option>
+              <option value="Box Truck" ${initialTrailerType === 'Box Truck' ? 'selected' : ''}>Box Truck</option>
+              <option value="Power Only" ${initialTrailerType === 'Power Only' ? 'selected' : ''}>Power Only</option>
+              <option value="Step Deck" ${initialTrailerType === 'Step Deck' ? 'selected' : ''}>Step Deck</option>
+              <option value="Lowboy" ${initialTrailerType === 'Lowboy' ? 'selected' : ''}>Lowboy</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="counter-notes" style="font-weight: 600; font-size: 12px; margin-bottom: 6px; display: block; color: var(--text-main);">Notes / Addendum (Optional)</label>
+            <textarea id="counter-notes" class="form-control" placeholder="Add terms, schedule constraints, or details..." style="height: 60px; resize: none; font-size: 12px;"></textarea>
+          </div>
+          
+          <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 10px;">
+            <button type="button" class="btn btn-outline" id="btn-counter-cancel" style="padding: 8px 16px; font-size: 12px;">Cancel</button>
+            <button type="submit" class="btn btn-primary" style="padding: 8px 16px; font-size: 12px;">Send Counter</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  const modalDiv = document.createElement('div');
+  modalDiv.id = 'counter-offer-modal-container';
+  modalDiv.innerHTML = modalHtml;
+  document.body.appendChild(modalDiv);
+
+  document.getElementById('btn-counter-cancel').onclick = () => {
+    modalDiv.remove();
+  };
+
+  document.getElementById('counter-offer-form').onsubmit = (e) => {
+    e.preventDefault();
+
+    const price = parseFloat(document.getElementById('counter-price').value);
+    const pickupDate = document.getElementById('counter-pickup-date').value;
+    const deliveryDate = document.getElementById('counter-delivery-date').value;
+    const trailerType = document.getElementById('counter-trailer-type').value;
+    const notes = document.getElementById('counter-notes').value.trim();
+
+    if (isNaN(price) || price <= 0) {
+      alert('Please enter a valid price.');
+      return;
+    }
+    if (!pickupDate || !deliveryDate) {
+      alert('Please select both pickup and delivery dates.');
+      return;
+    }
+    if (new Date(pickupDate) > new Date(deliveryDate)) {
+      alert('Delivery date cannot be before pickup date.');
+      return;
+    }
+
+    const text = `${currentUser.companyName} proposed a counter offer of $${price.toLocaleString()} for ${trailerType}.`;
+
+    const additionalFields = {
+      pickupDate,
+      deliveryDate,
+      trailerType,
+      notes
+    };
+
+    try {
+      Store.addNegotiationMessage(bidId, currentUser.id, currentUser.companyName, text, price, false, additionalFields);
+      
+      logShipmentEvent(shipment.id, 'counter_offer', 'Counter Offer Proposed', `${currentUser.companyName} proposed $${price.toLocaleString()} (${trailerType}).`, {
+        amount: price,
+        pickupDate,
+        deliveryDate,
+        trailerType
+      });
+
+      const partnerId = currentUser.role === 'shipper' ? bid.carrierId : shipment.shipperId;
+      addNotification(partnerId, `Counter offer of $${price.toLocaleString()} proposed on Shipment #${shipment.id.replace('ship_', '')}`, 'counter_offer_received', bidId);
+
+      modalDiv.remove();
+      showToast('Counter offer proposed successfully.');
+
+      renderInboxConversationList(currentInboxFilter);
+      if (activeInboxTab === 'messages') {
+        renderInboxChatHistory(bidId);
+      } else {
+        renderInboxWorkspaceContent(bidId);
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
 function confirmAcceptBid(bidId) {
   const bid = Store.getBids().find(b => b.id === bidId);
   if (!bid) return;
@@ -740,6 +1065,44 @@ function confirmAcceptBid(bidId) {
       Store.acceptBid(bidId);
       
       const shipment = Store.getShipment(bid.shipmentId);
+      
+      // Retrieve negotiated terms from the negotiation log
+      const neg = Store.getNegotiationForBid(bidId);
+      let finalPickupDate = shipment.pickupDate;
+      let finalDeliveryDate = shipment.deliveryDate;
+      let finalTrailerType = shipment.equipmentRequired;
+      
+      if (neg && neg.messages) {
+        const counterMsgs = neg.messages.filter(m => m.amount !== null && !m.isSystem);
+        if (counterMsgs.length > 0) {
+          const latestCounter = counterMsgs[counterMsgs.length - 1];
+          if (latestCounter.pickupDate) finalPickupDate = latestCounter.pickupDate;
+          if (latestCounter.deliveryDate) finalDeliveryDate = latestCounter.deliveryDate;
+          if (latestCounter.trailerType) finalTrailerType = latestCounter.trailerType;
+        }
+      }
+      
+      const stored = localStorage.getItem('movana_store_data');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          const s = data.shipments.find(x => x.id === bid.shipmentId);
+          if (s) {
+            s.budget = bid.amount;
+            s.pickupDate = finalPickupDate;
+            s.deliveryDate = finalDeliveryDate;
+            s.equipmentRequired = finalTrailerType;
+            localStorage.setItem('movana_store_data', JSON.stringify(data));
+            console.log("[NEGOTIATION ACCEPTED] Applied negotiated dates and trailer type to shipment:", s);
+          }
+        } catch (e) {
+          console.error("Error applying counter offer fields to shipment", e);
+        }
+      }
+      
+      logShipmentEvent(bid.shipmentId, 'accepted', 'Offer Accepted / Awarded', `Offer accepted by Shipper. Shipment awarded to ${bid.carrierName} for $${bid.amount.toLocaleString()}.`, { amount: bid.amount });
+      logShipmentEvent(bid.shipmentId, 'assigned', 'Pickup Scheduled', `Carrier scheduled cargo pickup date.`);
+      
       addNotification(shipment.shipperId, `Shipment #${shipment.id.substring(5)} awarded to carrier for $${bid.amount}`, 'bid_accepted', shipment.id);
       addNotification(bid.carrierId, `Your bid of $${bid.amount} on shipment #${shipment.id.substring(5)} was accepted!`, 'bid_accepted', shipment.id);
       
@@ -2226,30 +2589,481 @@ function updateLandingStats() {
 }
 
 // --- AUTHENTICATION CONTROLLER ---
+function clearFieldValidationState(input) {
+  if (!input) return;
+  input.style.borderColor = '';
+  input.style.boxShadow = '';
+  const errEl = document.getElementById(`err-${input.id}`);
+  if (errEl) {
+    errEl.style.opacity = '0';
+    setTimeout(() => { errEl.style.display = 'none'; }, 200);
+  }
+}
+
+function updateFieldValidationState(input, isValid, errorMsg = "") {
+  if (!input) return;
+  const errEl = document.getElementById(`err-${input.id}`);
+  
+  if (isValid) {
+    input.style.borderColor = '#22c55e';
+    input.style.boxShadow = '0 0 0 2px rgba(34, 197, 94, 0.15)';
+    if (errEl) {
+      errEl.style.opacity = '0';
+      setTimeout(() => { errEl.style.display = 'none'; }, 200);
+    }
+  } else {
+    input.style.borderColor = '#ef4444';
+    input.style.boxShadow = '0 0 0 2px rgba(239, 68, 68, 0.15)';
+    if (errEl && errorMsg) {
+      errEl.textContent = errorMsg;
+      errEl.style.display = 'block';
+      setTimeout(() => { errEl.style.opacity = '1'; }, 10);
+    }
+  }
+}
+
+function updatePasswordLiveRequirements(password) {
+  const reqs = {
+    length: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[!@#$%^&*(),.?":{}|<>]/.test(password)
+  };
+
+  const updateReqUI = (id, isValid) => {
+    const el = document.getElementById(id);
+    if (el) {
+      const icon = el.querySelector('.req-icon');
+      if (isValid) {
+        el.style.color = '#16a34a';
+        if (icon) icon.textContent = '✓';
+      } else {
+        el.style.color = 'var(--text-muted)';
+        if (icon) icon.textContent = '○';
+      }
+    }
+  };
+
+  updateReqUI('req-length', reqs.length);
+  updateReqUI('req-uppercase', reqs.uppercase);
+  updateReqUI('req-lowercase', reqs.lowercase);
+  updateReqUI('req-number', reqs.number);
+  updateReqUI('req-special', reqs.special);
+  
+  return Object.values(reqs).every(Boolean);
+}
+
+function bindRegistrationLiveValidation() {
+  const usernameInput = document.getElementById('auth-username');
+  const contactNameInput = document.getElementById('auth-contact-name');
+  const emailInput = document.getElementById('auth-email');
+  const phoneInput = document.getElementById('auth-phone');
+  const companyInput = document.getElementById('auth-company');
+  const passwordInput = document.getElementById('auth-password');
+  const confirmPasswordInput = document.getElementById('auth-confirm-password');
+  const mcNumberInput = document.getElementById('auth-mc-number');
+  const dotNumberInput = document.getElementById('auth-dot-number');
+  const equipmentContainer = document.getElementById('auth-equipment-container');
+
+  const checkUsername = () => {
+    const val = usernameInput.value.trim();
+    if (!val) {
+      updateFieldValidationState(usernameInput, false, "Username is required.");
+      return false;
+    } else if (val.length < 3) {
+      updateFieldValidationState(usernameInput, false, "Username must be at least 3 characters.");
+      return false;
+    }
+    updateFieldValidationState(usernameInput, true);
+    return true;
+  };
+
+  const checkContactName = () => {
+    const val = contactNameInput.value.trim();
+    if (!val) {
+      updateFieldValidationState(contactNameInput, false, "Contact name is required.");
+      return false;
+    }
+    updateFieldValidationState(contactNameInput, true);
+    return true;
+  };
+
+  const checkEmail = () => {
+    const val = emailInput.value.trim();
+    if (!val) {
+      updateFieldValidationState(emailInput, false, "Email address is required.");
+      return false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+      updateFieldValidationState(emailInput, false, "Please enter a valid email address.");
+      return false;
+    }
+    updateFieldValidationState(emailInput, true);
+    return true;
+  };
+
+  const checkPhone = () => {
+    const val = phoneInput.value.trim();
+    const digits = val.replace(/\D/g, '');
+    if (!val) {
+      updateFieldValidationState(phoneInput, false, "Mobile phone number is required.");
+      return false;
+    } else if (digits.length < 10) {
+      updateFieldValidationState(phoneInput, false, "Phone number must be at least 10 digits.");
+      return false;
+    }
+    updateFieldValidationState(phoneInput, true);
+    return true;
+  };
+
+  const checkCompany = () => {
+    const val = companyInput.value.trim();
+    if (!val) {
+      updateFieldValidationState(companyInput, false, "Company name is required.");
+      return false;
+    }
+    updateFieldValidationState(companyInput, true);
+    return true;
+  };
+
+  const checkPassword = () => {
+    const val = passwordInput.value;
+    const isComplexityValid = updatePasswordLiveRequirements(val);
+    if (!val) {
+      updateFieldValidationState(passwordInput, false, "Password is required.");
+      return false;
+    } else if (val.length < 8) {
+      updateFieldValidationState(passwordInput, false, "Password must be at least 8 characters.");
+      return false;
+    } else if (!isComplexityValid) {
+      updateFieldValidationState(passwordInput, false, "Password does not meet complexity requirements.");
+      return false;
+    }
+    updateFieldValidationState(passwordInput, true);
+    return true;
+  };
+
+  const checkConfirmPassword = () => {
+    const val = confirmPasswordInput.value;
+    const pwdVal = passwordInput.value;
+    if (!val) {
+      updateFieldValidationState(confirmPasswordInput, false, "Please confirm your password.");
+      return false;
+    } else if (val !== pwdVal) {
+      updateFieldValidationState(confirmPasswordInput, false, "Passwords do not match.");
+      return false;
+    }
+    updateFieldValidationState(confirmPasswordInput, true);
+    return true;
+  };
+
+  const checkMcNumber = () => {
+    const roleCarrier = document.getElementById('role-carrier');
+    if (roleCarrier && roleCarrier.checked) {
+      const val = mcNumberInput.value.trim();
+      if (!val) {
+        updateFieldValidationState(mcNumberInput, false, "MC Number is required for carriers.");
+        return false;
+      }
+    }
+    updateFieldValidationState(mcNumberInput, true);
+    return true;
+  };
+
+  const checkDotNumber = () => {
+    const roleCarrier = document.getElementById('role-carrier');
+    if (roleCarrier && roleCarrier.checked) {
+      const val = dotNumberInput.value.trim();
+      if (!val) {
+        updateFieldValidationState(dotNumberInput, false, "DOT Number is required for carriers.");
+        return false;
+      }
+    }
+    updateFieldValidationState(dotNumberInput, true);
+    return true;
+  };
+
+  const checkEquipment = () => {
+    const roleCarrier = document.getElementById('role-carrier');
+    if (roleCarrier && roleCarrier.checked) {
+      const checkedCount = document.querySelectorAll('.auth-equipment-checkbox:checked').length;
+      const errEl = document.getElementById('err-auth-equipment');
+      if (checkedCount === 0) {
+        if (equipmentContainer) {
+          equipmentContainer.style.borderColor = '#ef4444';
+          equipmentContainer.style.boxShadow = '0 0 0 2px rgba(239, 68, 68, 0.15)';
+        }
+        if (errEl) {
+          errEl.textContent = "Please select at least one Equipment Type.";
+          errEl.style.display = 'block';
+          errEl.style.opacity = '1';
+        }
+        return false;
+      }
+      if (equipmentContainer) {
+        equipmentContainer.style.borderColor = '#22c55e';
+        equipmentContainer.style.boxShadow = '0 0 0 2px rgba(34, 197, 94, 0.15)';
+      }
+      if (errEl) {
+        errEl.style.opacity = '0';
+        errEl.style.display = 'none';
+      }
+    }
+    return true;
+  };
+
+  if (usernameInput) usernameInput.oninput = checkUsername;
+  if (contactNameInput) contactNameInput.oninput = checkContactName;
+  if (emailInput) emailInput.oninput = checkEmail;
+  if (phoneInput) phoneInput.oninput = checkPhone;
+  if (companyInput) companyInput.oninput = checkCompany;
+  if (passwordInput) {
+    passwordInput.oninput = () => {
+      checkPassword();
+      if (confirmPasswordInput.value) checkConfirmPassword();
+    };
+  }
+  if (confirmPasswordInput) confirmPasswordInput.oninput = checkConfirmPassword;
+  if (mcNumberInput) mcNumberInput.oninput = checkMcNumber;
+  if (dotNumberInput) dotNumberInput.oninput = checkDotNumber;
+  
+  const checkboxes = document.querySelectorAll('.auth-equipment-checkbox');
+  checkboxes.forEach(cb => {
+    cb.onchange = checkEquipment;
+  });
+}
+
 function setAuthMode(mode) {
   elements.authModeInput.value = mode;
-  elements.authError.classList.add('d-none');
+  if (elements.authError) elements.authError.classList.add('d-none');
   
   if (mode === 'login') {
     elements.tabLogin.classList.add('active');
     elements.tabRegister.classList.remove('active');
     elements.authTitle.textContent = 'Welcome Back';
     elements.authSubtitle.textContent = 'Sign in to manage your shipments and bids.';
-    elements.registerFields.classList.add('d-none');
-    elements.authSubmitBtn.textContent = 'Sign In';
-    elements.authUsername.value = '';
-    elements.authPassword.value = '';
+    
+    // Restore static login HTML
+    elements.authForm.innerHTML = `
+      <input type="hidden" id="auth-mode" value="login">
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label for="auth-username" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px;">Username</label>
+        <input type="text" id="auth-username" class="form-control" placeholder="e.g. shipper1" required style="width: 100%; box-sizing: border-box;">
+      </div>
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label for="auth-password" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px;">Password</label>
+        <input type="password" id="auth-password" class="form-control" placeholder="••••••••" required style="width: 100%; box-sizing: border-box;">
+      </div>
+      <div id="register-fields" class="d-none"></div>
+      <div id="auth-error" style="color: var(--color-rejected); font-size: 13px; margin-bottom: 16px; line-height: 1.4;" class="d-none"></div>
+      <button type="submit" class="btn btn-primary" style="width: 100%;" id="auth-submit-btn">Sign In</button>
+    `;
+    
+    elements.authUsername = document.getElementById('auth-username');
+    elements.authPassword = document.getElementById('auth-password');
+    elements.authModeInput = document.getElementById('auth-mode');
+    elements.registerFields = document.getElementById('register-fields');
+    elements.authSubmitBtn = document.getElementById('auth-submit-btn');
+    elements.authError = document.getElementById('auth-error');
   } else {
     elements.tabLogin.classList.remove('active');
     elements.tabRegister.classList.add('active');
     elements.authTitle.textContent = 'Join Movana';
     elements.authSubtitle.textContent = 'Create an account as a Shipper or Carrier.';
-    elements.registerFields.classList.remove('d-none');
-    elements.authSubmitBtn.textContent = 'Create Account';
-    elements.authUsername.value = '';
-    elements.authPassword.value = '';
-    elements.authCompany.value = '';
+    setupRegistrationUI();
   }
+}
+
+function setupRegistrationUI() {
+  const form = elements.authForm;
+  if (!form) return;
+
+  console.log("=== setupRegistrationUI: Injecting premium registration DOM ===");
+
+  const equipmentOptions = [
+    'Dry Van', 'Reefer', 'Flatbed', 'Hotshot', 
+    'Car Hauler', 'Box Truck', 'Power Only', 'Step Deck', 'Lowboy'
+  ];
+
+  let equipmentCheckboxesHtml = '';
+  equipmentOptions.forEach(eq => {
+    equipmentCheckboxesHtml += `
+      <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-color); margin-bottom: 0;">
+        <input type="checkbox" class="auth-equipment-checkbox" value="${eq}"> ${eq}
+      </label>
+    `;
+  });
+
+  form.innerHTML = `
+    <input type="hidden" id="auth-mode" value="register">
+    
+    <!-- Username -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label for="auth-username" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: var(--text-main);">Username <span style="color: #ef4444;">*</span></label>
+      <input type="text" id="auth-username" class="form-control" placeholder="e.g. shipper1" required style="width: 100%; box-sizing: border-box;">
+      <div class="field-error-message" id="err-auth-username" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+    
+    <!-- Email Address -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label for="auth-email" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: var(--text-main);">Email Address <span style="color: #ef4444;">*</span></label>
+      <input type="email" id="auth-email" class="form-control" placeholder="e.g. john@acme.com" required style="width: 100%; box-sizing: border-box;">
+      <div class="field-error-message" id="err-auth-email" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+
+    <!-- Phone Number -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label for="auth-phone" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: var(--text-main);">Mobile Phone Number <span style="color: #ef4444;">*</span></label>
+      <input type="tel" id="auth-phone" class="form-control" placeholder="e.g. 555-0199" required style="width: 100%; box-sizing: border-box;">
+      <div class="field-error-message" id="err-auth-phone" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+
+    <!-- Company Name -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label for="auth-company" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: var(--text-main);">Company Name <span style="color: #ef4444;">*</span></label>
+      <input type="text" id="auth-company" class="form-control" placeholder="e.g. Acme Shipping Corp" required style="width: 100%; box-sizing: border-box;">
+      <div class="field-error-message" id="err-auth-company" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+
+    <!-- Contact Name -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label for="auth-contact-name" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: var(--text-main);">Contact Name <span style="color: #ef4444;">*</span></label>
+      <input type="text" id="auth-contact-name" class="form-control" placeholder="e.g. John Doe" required style="width: 100%; box-sizing: border-box;">
+      <div class="field-error-message" id="err-auth-contact-name" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+
+    <!-- Password and Confirm Password -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label for="auth-password" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: var(--text-main);">Password <span style="color: #ef4444;">*</span></label>
+      <div style="position: relative; width: 100%;">
+        <input type="password" id="auth-password" class="form-control" placeholder="••••••••" required style="padding-right: 40px; width: 100%; box-sizing: border-box;">
+        <button type="button" class="btn-password-toggle" data-target="auth-password" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 0; margin: 0; cursor: pointer; color: var(--text-muted); font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; height: 100%;">👁️</button>
+      </div>
+      <div id="password-requirements" style="font-size: 11px; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; color: var(--text-muted);">
+        <div id="req-length" style="display: flex; align-items: center; gap: 6px; transition: color 0.2s;"><span class="req-icon" style="font-weight: 700;">○</span> Minimum 8 characters</div>
+        <div id="req-uppercase" style="display: flex; align-items: center; gap: 6px; transition: color 0.2s;"><span class="req-icon" style="font-weight: 700;">○</span> One uppercase letter</div>
+        <div id="req-lowercase" style="display: flex; align-items: center; gap: 6px; transition: color 0.2s;"><span class="req-icon" style="font-weight: 700;">○</span> One lowercase letter</div>
+        <div id="req-number" style="display: flex; align-items: center; gap: 6px; transition: color 0.2s;"><span class="req-icon" style="font-weight: 700;">○</span> One number</div>
+        <div id="req-special" style="display: flex; align-items: center; gap: 6px; transition: color 0.2s;"><span class="req-icon" style="font-weight: 700;">○</span> One special character (!@#$%^&*(),.?":{}|<>)</div>
+      </div>
+      <div class="field-error-message" id="err-auth-password" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label for="auth-confirm-password" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: var(--text-main);">Confirm Password <span style="color: #ef4444;">*</span></label>
+      <div style="position: relative; width: 100%;">
+        <input type="password" id="auth-confirm-password" class="form-control" placeholder="••••••••" required style="padding-right: 40px; width: 100%; box-sizing: border-box;">
+        <button type="button" class="btn-password-toggle" data-target="auth-confirm-password" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 0; margin: 0; cursor: pointer; color: var(--text-muted); font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; height: 100%;">👁️</button>
+      </div>
+      <div class="field-error-message" id="err-auth-confirm-password" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+
+    <!-- Select Role -->
+    <label class="form-group label" style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-main);">Select Your Role</label>
+    <div class="role-select-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+      <input type="radio" name="auth-role" id="role-shipper" class="role-radio" value="shipper" checked>
+      <label for="role-shipper" class="role-label shipper-btn" style="padding: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        <span>Shipper</span>
+      </label>
+
+      <input type="radio" name="auth-role" id="role-carrier" class="role-radio" value="carrier">
+      <label for="role-carrier" class="role-label carrier-btn" style="padding: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="3" width="15" height="13"></rect>
+          <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+          <circle cx="5.5" cy="18.5" r="2.5"></circle>
+          <circle cx="18.5" cy="18.5" r="2.5"></circle>
+        </svg>
+        <span>Carrier</span>
+      </label>
+    </div>
+
+    <!-- Carrier Specific Fields -->
+    <div id="carrier-fields" class="d-none" style="margin-top: 16px; padding: 16px; border: 1.5px solid var(--border-color); border-radius: var(--radius-md); background: hsl(210, 20%, 98%); margin-bottom: 20px;">
+      <h4 style="font-size: 13px; font-weight: 700; color: var(--color-carrier); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Carrier Credentials</h4>
+      
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label for="auth-mc-number" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: var(--text-main);">MC Number <span style="color: #ef4444;">*</span></label>
+        <input type="text" id="auth-mc-number" class="form-control" placeholder="e.g. MC123456" style="width: 100%; box-sizing: border-box;">
+        <div class="field-error-message" id="err-auth-mc-number" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+      </div>
+      
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label for="auth-dot-number" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: var(--text-main);">DOT Number <span style="color: #ef4444;">*</span></label>
+        <input type="text" id="auth-dot-number" class="form-control" placeholder="e.g. DOT1234567" style="width: 100%; box-sizing: border-box;">
+        <div class="field-error-message" id="err-auth-dot-number" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+      </div>
+      
+      <label class="form-group label" style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 12px; color: var(--text-main);">Equipment Types (Select all that apply) <span style="color: #ef4444;">*</span></label>
+      <div class="equipment-types-container" id="auth-equipment-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 150px; overflow-y: auto; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: #fff; margin-bottom: 8px; box-sizing: border-box;">
+        ${equipmentCheckboxesHtml}
+      </div>
+      <div class="field-error-message" id="err-auth-equipment" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none; opacity: 0; transition: opacity 0.2s;"></div>
+    </div>
+
+    <!-- Error Block -->
+    <div id="auth-error" style="color: var(--color-rejected); font-size: 13px; margin-bottom: 16px; line-height: 1.4;" class="d-none"></div>
+
+    <!-- Submit Button -->
+    <button type="submit" class="btn btn-primary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;" id="auth-submit-btn">
+      Create Account
+    </button>
+  `;
+
+  elements.authUsername = document.getElementById('auth-username');
+  elements.authPassword = document.getElementById('auth-password');
+  elements.authCompany = document.getElementById('auth-company');
+  elements.authModeInput = document.getElementById('auth-mode');
+  elements.authSubmitBtn = document.getElementById('auth-submit-btn');
+  elements.authError = document.getElementById('auth-error');
+
+  const roleShipper = document.getElementById('role-shipper');
+  const roleCarrier = document.getElementById('role-carrier');
+  const carrierFields = document.getElementById('carrier-fields');
+
+  if (roleShipper && roleCarrier && carrierFields) {
+    roleShipper.addEventListener('change', () => {
+      carrierFields.classList.add('d-none');
+      clearFieldValidationState(document.getElementById('auth-mc-number'));
+      clearFieldValidationState(document.getElementById('auth-dot-number'));
+      const container = document.getElementById('auth-equipment-container');
+      if (container) {
+        container.style.borderColor = '';
+        container.style.boxShadow = '';
+      }
+      const equipErr = document.getElementById('err-auth-equipment');
+      if (equipErr) equipErr.style.display = 'none';
+    });
+    roleCarrier.addEventListener('change', () => {
+      carrierFields.classList.remove('d-none');
+    });
+  }
+
+  const toggleBtns = form.querySelectorAll('.btn-password-toggle');
+  toggleBtns.forEach(btn => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      const targetId = btn.getAttribute('data-target');
+      const input = document.getElementById(targetId);
+      if (input) {
+        if (input.type === 'password') {
+          input.type = 'text';
+          btn.textContent = '🙈';
+        } else {
+          input.type = 'password';
+          btn.textContent = '👁️';
+        }
+      }
+    };
+  });
+
+  bindRegistrationLiveValidation();
+}
 }
 
 // --- INTERACTIVE MAP GLOBALS & HELPERS ---
@@ -3922,6 +4736,24 @@ function injectInboxStyles() {
       background-color: #cbd5e1;
       border-radius: 3px;
     }
+    
+    @keyframes typing {
+      0% { transform: translateY(0px); opacity: 0.4; }
+      50% { transform: translateY(-4px); opacity: 1; }
+      100% { transform: translateY(0px); opacity: 0.4; }
+    }
+    .typing-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      background-color: var(--text-muted);
+      border-radius: 50%;
+      margin: 0 1px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -3936,7 +4768,7 @@ function createInboxViewDom() {
   inboxSec.className = 'dashboard-layout d-none';
   inboxSec.style.cssText = `
     display: grid;
-    grid-template-columns: 360px 1fr;
+    grid-template-columns: 320px 1fr;
     gap: 0px;
     height: calc(100vh - 100px);
     background: white;
@@ -3949,7 +4781,7 @@ function createInboxViewDom() {
   `;
   
   inboxSec.innerHTML = `
-    <aside class="inbox-sidebar" style="border-right: 1px solid var(--border-color); background: #f8fafc; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <aside class="inbox-sidebar" style="border-right: 1px solid var(--border-color); background: #f8fafc; display: flex; flex-direction: column; height: 100%; overflow: hidden; box-sizing: border-box;">
       <div class="inbox-sidebar-header" style="padding: 16px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;">
         <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 12px 0; color: var(--text-main);">Shipment Workspace</h2>
         <div class="inbox-filter-tabs" style="display: flex; flex-wrap: wrap; gap: 6px;">
@@ -3965,12 +4797,14 @@ function createInboxViewDom() {
       </div>
     </aside>
     
-    <div class="inbox-pane" id="inbox-chat-pane" style="display: flex; flex-direction: column; height: 100%; background: white; min-width: 0; overflow: hidden;">
+    <div class="inbox-pane" id="inbox-chat-pane" style="display: flex; flex-direction: column; height: 100%; background: white; min-width: 0; overflow: hidden; box-sizing: border-box;">
       <div class="inbox-pane-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; padding: 40px;">
         <span style="font-size: 48px; margin-bottom: 12px;">💬</span>
         <p>Select a shipment workspace from the list to view details and start messaging.</p>
       </div>
     </div>
+
+    <aside class="inbox-info-panel" id="inbox-info-panel" style="border-left: 1px solid var(--border-color); background: #f8fafc; display: flex; flex-direction: column; height: 100%; overflow-y: auto; display: none; padding: 20px; gap: 20px; box-sizing: border-box;"></aside>
   `;
   
   mainContent.appendChild(inboxSec);
@@ -4314,6 +5148,12 @@ function renderInboxChatPane(bidId) {
         <p>Select a shipment workspace from the list to view details and start messaging.</p>
       </div>
     `;
+    
+    // Hide info panel and collapse grid
+    const infoPanel = document.getElementById('inbox-info-panel');
+    if (infoPanel) infoPanel.style.display = 'none';
+    const inboxView = document.getElementById('inbox-view');
+    if (inboxView) inboxView.style.gridTemplateColumns = '320px 1fr';
     return;
   }
   
@@ -4374,8 +5214,8 @@ function renderInboxChatPane(bidId) {
             <h3 class="inbox-shipment-title" style="font-size: 16px; font-weight: 800; color: var(--text-main); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;">
               ${formattedTitle}
             </h3>
-            <div class="inbox-shipment-route" style="font-size: 12px; color: var(--text-muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
-              ${routeText}
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+              <span style="color: #10b981; font-size: 10px;">●</span> ${partnerName} • <span style="color: #10b981; font-weight: 700;">Online</span>
             </div>
           </div>
         </div>
@@ -4391,16 +5231,6 @@ function renderInboxChatPane(bidId) {
             View Shipment
           </button>
         </div>
-      </div>
-      
-      <div class="inbox-metadata-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px 16px; font-size: 11px; padding: 10px 12px; background: white; border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-xs);">
-        <div><span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Current Offer</span><strong style="font-size: 12px; color: var(--accent-carrier);">$${currentOffer.toLocaleString()}</strong></div>
-        <div><span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Maximum Budget</span><strong style="font-size: 12px; color: var(--text-main);">$${shipment.budget.toLocaleString()}</strong></div>
-        <div><span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Listing Date</span><strong>${postedText}</strong></div>
-        <div><span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Pickup Date</span><strong>${pickupDateFormatted}</strong></div>
-        <div><span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Delivery Window</span><strong>${deliveryDateFormatted}</strong></div>
-        <div><span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Priority</span><span class="inbox-badge-priority ${shipment.priority || 'standard'}" style="padding: 1px 6px; font-size: 9px;">${priorityText.toUpperCase()}</span></div>
-        <div><span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Equipment Required</span><strong>${equipmentText}</strong></div>
       </div>
     </div>
     
@@ -4432,8 +5262,15 @@ function renderInboxChatPane(bidId) {
     
     <!-- 5. Bottom Panel: Message Composer -->
     <div class="inbox-chat-input-panel" id="inbox-chat-input-panel" style="padding: 16px 20px; border-top: 1px solid var(--border-color); background: white; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
+      <!-- Image attachment preview container -->
+      <div id="attachment-preview-container" class="d-none" style="display: flex; align-items: center; gap: 8px; background: #f1f5f9; padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); margin-bottom: 4px; width: fit-content; max-width: 100%;">
+        <img id="attachment-preview-img" src="" style="width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-color); flex-shrink:0;">
+        <span style="font-size: 11px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 150px;" id="attachment-preview-name">Image.png</span>
+        <button type="button" id="btn-remove-attachment" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; font-weight: 700; padding: 0 4px;">&times;</button>
+      </div>
+
       <div style="display: flex; gap: 8px; align-items: flex-end;">
-        <button class="btn btn-outline btn-sm" id="btn-inbox-attach" style="padding: 10px; height: 38px; display: flex; align-items: center; justify-content: center; opacity: 0.6; cursor: not-allowed;" title="File attachments coming soon" disabled>
+        <button class="btn btn-outline btn-sm" id="btn-inbox-attach" style="padding: 10px; height: 38px; display: flex; align-items: center; justify-content: center; opacity: 0.9; cursor: pointer;" title="Attach image">
           📎
         </button>
         <textarea id="inbox-text-input" class="form-control" placeholder="Type a message to negotiate..." style="flex-grow: 1; height: 38px; min-height: 38px; max-height: 120px; padding: 8px 12px; line-height: 1.4; resize: vertical; overflow-y: auto;" maxlength="1000"></textarea>
@@ -4449,12 +5286,181 @@ function renderInboxChatPane(bidId) {
     </div>
   `;
   
+  // Render dynamic Shipment Info Panel (Right Panel)
+  const infoPanel = document.getElementById('inbox-info-panel');
+  if (infoPanel) {
+    infoPanel.style.display = 'flex';
+    document.getElementById('inbox-view').style.gridTemplateColumns = '320px 1fr 340px';
+    
+    const carrierUser = Store.getUsers().find(u => u.id === bid.carrierId);
+    const carrierMeta = getCarrierMetadata(bid.carrierId);
+    
+    const isMeShipper = currentUser.role === 'shipper';
+    const carrierNameDisplay = isMeShipper ? 
+      (isAwarded ? bid.carrierName : "Verified Carrier") : 
+      "You (Carrier)";
+      
+    const showCarrierCredentials = isAwarded || !isMeShipper;
+    
+    let specsHtml = '';
+    let d = shipment.shipmentTypeDetails || {};
+    if (shipment.shipmentType === 'Vehicle Transport') {
+      const year = d.year || shipment.vehicleYear || '';
+      const make = d.make || shipment.vehicleMake || '';
+      const model = d.model || shipment.vehicleModel || '';
+      const subType = d.subType || shipment.vehicleType || 'Car';
+      const condition = d.condition || shipment.vehicleCondition || 'operable';
+      const vin = d.vin || shipment.vehicleVin || 'N/A';
+      
+      specsHtml = `
+        <div style="font-size: 12px; display: flex; flex-direction: column; gap: 6px;">
+          <div><span style="color: var(--text-muted);">Vehicle:</span> <strong>${year} ${make} ${model}</strong></div>
+          <div><span style="color: var(--text-muted);">Type:</span> <strong>${subType}</strong></div>
+          <div><span style="color: var(--text-muted);">Condition:</span> <strong>${condition.charAt(0).toUpperCase() + condition.slice(1)}</strong></div>
+          <div><span style="color: var(--text-muted);">VIN:</span> <strong>${vin}</strong></div>
+        </div>
+      `;
+    } else if (shipment.shipmentType === 'Freight') {
+      specsHtml = `
+        <div style="font-size: 12px; display: flex; flex-direction: column; gap: 6px;">
+          <div><span style="color: var(--text-muted);">Commodity:</span> <strong>${d.commodity || 'General Cargo'}</strong></div>
+          <div><span style="color: var(--text-muted);">Pallets:</span> <strong>${d.pallets || 0}</strong></div>
+          <div><span style="color: var(--text-muted);">Stackable:</span> <strong>${d.stackable ? 'Yes' : 'No'}</strong></div>
+          <div><span style="color: var(--text-muted);">Hazmat:</span> <strong>${d.hazmat ? 'Yes ⚠️' : 'No'}</strong></div>
+        </div>
+      `;
+    } else {
+      specsHtml = `
+        <div style="font-size: 12px; display: flex; flex-direction: column; gap: 6px;">
+          <div><span style="color: var(--text-muted);">Type:</span> <strong>${shipment.shipmentType || 'General Cargo'}</strong></div>
+          <div><span style="color: var(--text-muted);">Description:</span> <strong style="font-weight: 500;">${shipment.description || 'No description provided'}</strong></div>
+        </div>
+      `;
+    }
+    
+    infoPanel.innerHTML = `
+      <div id="info-panel-photos-section" style="display: none; flex-shrink: 0; width: 100%;"></div>
+      
+      ${shipment.coverImage ? `
+        <div id="info-panel-cover-image" style="width: 100%; height: 140px; overflow: hidden; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: #e2e8f0; flex-shrink: 0;">
+          <img src="${shipment.coverImage}" style="width: 100%; height: 100%; object-fit: cover;">
+        </div>
+      ` : ''}
+
+      <div style="padding-bottom: 12px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;">
+        <h4 style="font-size: 14px; font-weight: 800; color: var(--text-main); margin: 0 0 6px 0; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${shipment.cargoType || 'General Cargo'}</h4>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="status-badge ${shipment.status.replace(' ', '-')}" style="font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px;">
+            ${formatStatusText(shipment.status)}
+          </span>
+          <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">${postedText}</span>
+        </div>
+      </div>
+
+      <div style="padding-bottom: 12px; border-bottom: 1px solid var(--border-color); font-size: 12px; line-height: 1.4; flex-shrink: 0;">
+        <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 6px;">Locations</span>
+        <div style="margin-bottom: 6px; display: flex; gap: 6px; align-items: flex-start;">
+          <span style="color: #10b981; font-weight: 700; font-size: 11px;">🟢</span>
+          <span style="min-width: 0; word-break: break-word;">${shipment.originStreetAddress || shipment.origin}</span>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: flex-start;">
+          <span style="color: #ef4444; font-weight: 700; font-size: 11px;">🔴</span>
+          <span style="min-width: 0; word-break: break-word;">${shipment.destinationStreetAddress || shipment.destination}</span>
+        </div>
+      </div>
+
+      <div style="padding-bottom: 12px; border-bottom: 1px solid var(--border-color); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex-shrink: 0;">
+        <div>
+          <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 2px;">Pickup Date</span>
+          <strong style="font-size: 12px; color: var(--text-main);">${pickupDateFormatted}</strong>
+        </div>
+        <div>
+          <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 2px;">Delivery Date</span>
+          <strong style="font-size: 12px; color: var(--text-main);">${deliveryDateFormatted}</strong>
+        </div>
+      </div>
+
+      <div style="padding-bottom: 12px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;">
+        <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 6px;">Specifications</span>
+        ${specsHtml}
+      </div>
+
+      <div style="padding-bottom: 12px; border-bottom: 1px solid var(--border-color); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex-shrink: 0;">
+        <div>
+          <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 2px;">Shipper Budget</span>
+          <strong style="font-size: 13px; color: var(--text-main);">$${shipment.budget.toLocaleString()}</strong>
+        </div>
+        <div>
+          <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 2px;">Current Offer</span>
+          <strong style="font-size: 13px; color: var(--accent-carrier);">$${currentOffer.toLocaleString()}</strong>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
+        <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 2px;">Carrier Details</span>
+        <div style="background: white; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; box-shadow: var(--shadow-xs); display: flex; flex-direction: column; gap: 6px;">
+          <div style="font-weight: 700; font-size: 13px; color: var(--text-main); display: flex; align-items: center; justify-content: space-between;">
+            <span style="text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 180px;">${carrierNameDisplay}</span>
+            <span style="font-size: 10px; background: rgba(34, 197, 94, 0.1); color: #16a34a; padding: 1px 6px; border-radius: 10px; font-weight: 700; flex-shrink: 0;">✓ Verified</span>
+          </div>
+          <div style="font-size: 12px; color: #eab308; font-weight: 600;">
+            ${carrierMeta.rating} ${carrierMeta.stars} <span style="color: var(--text-muted); font-weight: 500; font-size: 11px;">(${carrierMeta.jobsCompleted} jobs)</span>
+          </div>
+          
+          <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--border-color); padding-top: 6px; margin-top: 2px;">
+            <div>Response: <strong>${carrierMeta.responseTime}</strong></div>
+            <div>Joined: <strong>${carrierMeta.memberSince}</strong></div>
+            
+            ${showCarrierCredentials ? `
+              <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border-color); display: flex; flex-direction: column; gap: 2px;">
+                <div>MC Number: <strong>${carrierUser && carrierUser.mcNumber ? carrierUser.mcNumber : 'Pending'}</strong></div>
+                <div>DOT Number: <strong>${carrierUser && carrierUser.dotNumber ? carrierUser.dotNumber : 'Pending'}</strong></div>
+                <div style="text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">Trailer: <strong>${carrierUser && carrierUser.equipmentTypes ? carrierUser.equipmentTypes.join(', ') : 'Dry Van'}</strong></div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #16a34a; background: rgba(34, 197, 94, 0.06); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid rgba(34, 197, 94, 0.15); font-weight: 600;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink: 0;">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <span>✓ Active ($250k Cargo Insurance)</span>
+        </div>
+      </div>
+    `;
+
+    // Load Photos async
+    Store.getShipmentPhotos(shipment.id).then(photosList => {
+      const photoSection = document.getElementById('info-panel-photos-section');
+      const coverImg = document.getElementById('info-panel-cover-image');
+      if (photoSection && photosList && photosList.length > 0) {
+        photoSection.innerHTML = `
+          <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 6px; flex-shrink:0;">Photos (${photosList.length})</span>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; flex-shrink: 0; margin-bottom: 8px;">
+            ${photosList.slice(0, 3).map(p => `
+              <div style="border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; background: white; aspect-ratio: 1; cursor: pointer;" onclick="window.open('${p}', '_blank')">
+                <img src="${p}" style="width: 100%; height: 100%; object-fit: cover;">
+              </div>
+            `).join('')}
+          </div>
+        `;
+        photoSection.style.display = 'block';
+        if (coverImg) coverImg.style.display = 'none';
+      }
+    });
+  }
+  
   const viewShipment = () => {
     showDetailsModal(shipment);
   };
-  pane.querySelector('.inbox-shipment-img').onclick = viewShipment;
-  pane.querySelector('.inbox-shipment-title').onclick = viewShipment;
-  document.getElementById('inbox-btn-view-shipment').onclick = viewShipment;
+  
+  // Safe element binding checks
+  const titleEl = pane.querySelector('.inbox-shipment-title');
+  if (titleEl) titleEl.onclick = viewShipment;
+  
+  const viewBtn = document.getElementById('inbox-btn-view-shipment');
+  if (viewBtn) viewBtn.onclick = viewShipment;
   
   document.getElementById('inbox-btn-archive').onclick = () => {
     let archived = JSON.parse(localStorage.getItem(`movana_chat_archived_${currentUser.id}`) || '[]');
@@ -4485,15 +5491,76 @@ function renderInboxChatPane(bidId) {
   const violationCount = Store.getViolationCount(currentUser.id);
   const warningAlert = document.getElementById('inbox-warning-alert');
   if (violationCount > 0) {
-    warningAlert.classList.remove('d-none');
-    document.getElementById('inbox-violation-count').textContent = violationCount;
-    if (violationCount >= 3) {
-      document.getElementById('inbox-warning-text').textContent = "Sensitive information was detected in your message. Your account is currently FLAGGED FOR REVIEW due to repeated violations of our contact sharing policy.";
-    } else {
-      document.getElementById('inbox-warning-text').textContent = "Sharing contact details (phone, email, MC/DOT, websites, coordinates) before award is strictly prohibited.";
+    if (warningAlert) {
+      warningAlert.classList.remove('d-none');
+      const countEl = document.getElementById('inbox-violation-count');
+      if (countEl) countEl.textContent = violationCount;
+      const textEl = document.getElementById('inbox-warning-text');
+      if (textEl) {
+        if (violationCount >= 3) {
+          textEl.textContent = "Sensitive information was detected in your message. Your account is currently FLAGGED FOR REVIEW due to repeated violations of our contact sharing policy.";
+        } else {
+          textEl.textContent = "Sharing contact details (phone, email, MC/DOT, websites, coordinates) before award is strictly prohibited.";
+        }
+      }
     }
   } else {
-    warningAlert.classList.add('d-none');
+    if (warningAlert) warningAlert.classList.add('d-none');
+  }
+  
+  // Hidden attachment input setup
+  let fileInput = document.getElementById('chat-file-input');
+  if (!fileInput) {
+    fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.id = 'chat-file-input';
+    fileInput.accept = 'image/*';
+    fileInput.className = 'd-none';
+    document.body.appendChild(fileInput);
+  }
+  
+  let pendingAttachmentBase64 = null;
+  
+  const attachBtn = document.getElementById('btn-inbox-attach');
+  const previewContainer = document.getElementById('attachment-preview-container');
+  const previewImg = document.getElementById('attachment-preview-img');
+  const previewName = document.getElementById('attachment-preview-name');
+  const removeAttachBtn = document.getElementById('btn-remove-attachment');
+  
+  if (attachBtn) {
+    attachBtn.onclick = (e) => {
+      e.preventDefault();
+      fileInput.click();
+    };
+  }
+  
+  fileInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file only.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        pendingAttachmentBase64 = event.target.result;
+        if (previewImg && previewContainer && previewName) {
+          previewImg.src = pendingAttachmentBase64;
+          previewName.textContent = file.name;
+          previewContainer.classList.remove('d-none');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  
+  if (removeAttachBtn) {
+    removeAttachBtn.onclick = (e) => {
+      e.preventDefault();
+      pendingAttachmentBase64 = null;
+      fileInput.value = '';
+      if (previewContainer) previewContainer.classList.add('d-none');
+    };
   }
   
   // Send Handlers
@@ -4515,7 +5582,7 @@ function renderInboxChatPane(bidId) {
   
   const handleSend = () => {
     const text = textInput.value.trim();
-    if (!text) return;
+    if (!text && !pendingAttachmentBase64) return;
     
     const isBidRejected = bid.status === 'rejected';
     if (!isClosed && !isBidRejected && containsProhibitedInfo(text)) {
@@ -4541,13 +5608,25 @@ function renderInboxChatPane(bidId) {
       
       textInput.value = '';
       if (counterEl) counterEl.textContent = '0 / 1000';
+      pendingAttachmentBase64 = null;
+      fileInput.value = '';
+      if (previewContainer) previewContainer.classList.add('d-none');
       return;
     }
     
+    const additionalFields = {};
+    if (pendingAttachmentBase64) {
+      additionalFields.imageAttachment = pendingAttachmentBase64;
+    }
+    
     try {
-      Store.addNegotiationMessage(bidId, currentUser.id, currentUser.companyName, text, null, false);
+      Store.addNegotiationMessage(bidId, currentUser.id, currentUser.companyName, text || "Sent an attachment", null, false, additionalFields);
+      
       textInput.value = '';
       if (counterEl) counterEl.textContent = '0 / 1000';
+      pendingAttachmentBase64 = null;
+      fileInput.value = '';
+      if (previewContainer) previewContainer.classList.add('d-none');
       
       const partnerId = currentUser.role === 'shipper' ? bid.carrierId : shipment.shipperId;
       addNotification(partnerId, `New message received regarding Shipment #${shipment.id.replace('ship_', '')}`, 'message_received', bidId);
@@ -4985,6 +6064,101 @@ function renderTrackingTab(container, shipment, bid) {
   }, 100);
 }
 
+function getShipmentHistory(shipment, bid) {
+  // If it already has history, return it
+  if (shipment.history && shipment.history.length > 0) {
+    return shipment.history;
+  }
+  
+  // Otherwise, construct a mock historical sequence based on its current status
+  const history = [
+    {
+      event: 'created',
+      label: 'Shipment Created',
+      desc: `Shipment listed on the marketplace with a budget of $${shipment.budget.toLocaleString()}.`,
+      timestamp: shipment.createdAt || new Date(Date.now() - 5*24*3600*1000).toISOString()
+    }
+  ];
+  
+  const createdTime = new Date(shipment.createdAt || Date.now() - 5*24*3600*1000);
+  
+  if (bid) {
+    history.push({
+      event: 'bid_submitted',
+      label: 'Carrier Bid Submitted',
+      desc: `Carrier proposed initial bid of $${bid.amount.toLocaleString()}.`,
+      timestamp: new Date(createdTime.getTime() + 1*3600*1000).toISOString()
+    });
+  }
+  
+  const status = shipment.status.toLowerCase();
+  
+  if (status === 'negotiating' && bid) {
+    history.push({
+      event: 'counter_offer',
+      label: 'Counter Offer Proposed',
+      desc: `Shipper and Carrier started active pricing negotiations.`,
+      timestamp: new Date(createdTime.getTime() + 2*3600*1000).toISOString()
+    });
+  }
+  
+  if (['awarded', 'assigned', 'picked up', 'in transit', 'delivered', 'completed'].includes(status) && bid) {
+    history.push({
+      event: 'accepted',
+      label: 'Offer Accepted / Awarded',
+      desc: `Offer accepted by Shipper. Shipment awarded to ${shipment.carrierName || bid.carrierName} for $${bid.amount.toLocaleString()}.`,
+      timestamp: new Date(createdTime.getTime() + 6*3600*1000).toISOString()
+    });
+  }
+  
+  if (['assigned', 'picked up', 'in transit', 'delivered', 'completed'].includes(status) && bid) {
+    history.push({
+      event: 'assigned',
+      label: 'Pickup Scheduled',
+      desc: `Carrier scheduled cargo pickup date with Shipper.`,
+      timestamp: new Date(createdTime.getTime() + 12*3600*1000).toISOString()
+    });
+  }
+  
+  if (['picked up', 'in transit', 'delivered', 'completed'].includes(status) && bid) {
+    history.push({
+      event: 'picked up',
+      label: 'Cargo Picked Up',
+      desc: `Cargo loaded onto carrier transport vehicle.`,
+      timestamp: new Date(createdTime.getTime() + 24*3600*1000).toISOString()
+    });
+  }
+  
+  if (['in transit', 'delivered', 'completed'].includes(status) && bid) {
+    history.push({
+      event: 'in transit',
+      label: 'Departed (In Transit)',
+      desc: `Carrier departed and is now in transit to destination.`,
+      timestamp: new Date(createdTime.getTime() + 26*3600*1000).toISOString()
+    });
+  }
+  
+  if (['delivered', 'completed'].includes(status) && bid) {
+    history.push({
+      event: 'delivered',
+      label: 'Cargo Delivered',
+      desc: `Cargo reached destination and unloaded.`,
+      timestamp: new Date(createdTime.getTime() + 48*3600*1000).toISOString()
+    });
+  }
+  
+  if (status === 'completed' && bid) {
+    history.push({
+      event: 'completed',
+      label: 'Shipment Completed',
+      desc: `Shipper confirmed delivery completion, releasing payout funds.`,
+      timestamp: new Date(createdTime.getTime() + 50*3600*1000).toISOString()
+    });
+  }
+  
+  return history;
+}
+
 function renderTimelineTab(container, shipment, bid) {
   const stageIndex = getShipmentStageIndex(shipment, bid);
   const stages = [
@@ -4999,30 +6173,64 @@ function renderTimelineTab(container, shipment, bid) {
     { id: 'completed', title: 'Shipment Completed', desc: 'Shipper confirmed delivery completion, releasing payout funds.' }
   ];
   
+  const history = getShipmentHistory(shipment, bid);
+  
   const wrapper = document.createElement('div');
   wrapper.style.padding = '24px';
+  wrapper.style.boxSizing = 'border-box';
   wrapper.innerHTML = `
-    <div style="background: white; border-radius: var(--radius-md); max-width: 600px; margin: 0 auto; border: 1px solid var(--border-color); padding: 24px; box-shadow: var(--shadow-xs);">
-      <h3 style="font-size: 16px; font-weight: 700; color: var(--text-main); margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">Shipment Milestone Progress</h3>
-      <div class="timeline-stepper">
-        ${stages.map((stg, idx) => {
-          const isActive = idx === stageIndex;
-          const isCompleted = idx < stageIndex;
-          let stepClass = '';
-          if (isActive) stepClass = 'active';
-          else if (isCompleted) stepClass = 'completed';
-          
-          return `
-            <div class="timeline-step ${stepClass}">
-              <div class="timeline-step-bullet">${isCompleted ? '✓' : idx + 1}</div>
-               <div>
-                 <div class="timeline-step-title" style="font-size: 13px; font-weight: 700; margin-bottom: 2px;">${stg.title}</div>
-                 <div class="timeline-step-desc" style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">${stg.desc}</div>
-               </div>
-            </div>
-          `;
-        }).join('')}
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; box-sizing: border-box;">
+      
+      <!-- Stepper Panel -->
+      <div style="background: white; border-radius: var(--radius-md); border: 1px solid var(--border-color); padding: 24px; box-shadow: var(--shadow-xs); box-sizing: border-box;">
+        <h3 style="font-size: 16px; font-weight: 700; color: var(--text-main); margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-top: 0;">Milestone Progress</h3>
+        <div class="timeline-stepper">
+          ${stages.map((stg, idx) => {
+            const isActive = idx === stageIndex;
+            const isCompleted = idx < stageIndex;
+            let stepClass = '';
+            if (isActive) stepClass = 'active';
+            else if (isCompleted) stepClass = 'completed';
+            
+            return `
+              <div class="timeline-step ${stepClass}">
+                <div class="timeline-step-bullet" style="flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; font-size: 11px; display: flex; align-items: center; justify-content: center; font-weight: bold;">${isCompleted ? '✓' : idx + 1}</div>
+                 <div style="min-width: 0;">
+                   <div class="timeline-step-title" style="font-size: 13px; font-weight: 700; margin-bottom: 2px;">${stg.title}</div>
+                   <div class="timeline-step-desc" style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">${stg.desc}</div>
+                 </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
       </div>
+      
+      <!-- Activity Log Panel -->
+      <div style="background: white; border-radius: var(--radius-md); border: 1px solid var(--border-color); padding: 24px; box-shadow: var(--shadow-xs); box-sizing: border-box; display: flex; flex-direction: column;">
+        <h3 style="font-size: 16px; font-weight: 700; color: var(--text-main); margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-top: 0;">Activity Log History</h3>
+        
+        <div style="display: flex; flex-direction: column; gap: 16px; overflow-y: auto; flex-grow: 1; max-height: 520px; padding-right: 6px;">
+          ${history.slice().reverse().map((evt) => {
+            const dateObj = new Date(evt.timestamp);
+            const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const dateStr = dateObj.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+            
+            return `
+              <div style="display: flex; gap: 12px; align-items: flex-start; font-size: 12px; border-bottom: 1px dashed var(--border-color); padding-bottom: 12px;">
+                <div style="background: #f1f5f9; color: var(--text-main); font-weight: 700; padding: 4px 8px; border-radius: 4px; font-size: 10px; text-transform: uppercase; white-space: nowrap; text-align: center; flex-shrink: 0; min-width: 70px;">
+                  ${evt.event.replace('_', ' ')}
+                </div>
+                <div style="min-width: 0; flex-grow: 1;">
+                  <div style="font-weight: 700; color: var(--text-main); margin-bottom: 2px;">${evt.label}</div>
+                  <div style="color: var(--text-muted); line-height: 1.3;">${evt.desc}</div>
+                  <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px; font-weight: 600;">${dateStr} at ${timeStr}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+      
     </div>
   `;
   container.appendChild(wrapper);
@@ -5072,48 +6280,87 @@ function renderInboxChatHistory(bidId) {
       cardDiv.className = 'inbox-chat-counter-card';
       cardDiv.style.cssText = `
         align-self: center;
-        background: #f0fdf4;
-        border: 1px solid #bbf7d0;
+        background: white;
+        border: 1.5px solid var(--border-color);
         border-radius: var(--radius-md);
         padding: 16px;
-        width: 80%;
-        max-width: 320px;
+        width: 85%;
+        max-width: 380px;
         box-shadow: var(--shadow-sm);
-        text-align: center;
-        margin: 8px 0;
+        margin: 12px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        text-align: left;
       `;
       
+      const pickupDateStr = msg.pickupDate ? new Date(msg.pickupDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : (shipment.pickupDate ? new Date(shipment.pickupDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Flexible');
+      const deliveryDateStr = msg.deliveryDate ? new Date(msg.deliveryDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : (shipment.deliveryDate ? new Date(shipment.deliveryDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Flexible');
+      const trailerType = msg.trailerType || shipment.equipmentRequired || 'Dry Van';
+      const notes = msg.notes || '';
+      
       cardDiv.innerHTML = `
-        <div style="font-size: 11px; text-transform: uppercase; color: #16a34a; font-weight: 700; letter-spacing: 0.5px;">Counter Offer Proposed</div>
-        <div style="font-size: 24px; font-weight: 800; color: #15803d; margin: 8px 0;">$${msg.amount.toLocaleString()}</div>
-        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">By ${isMe ? 'You' : (currentUser.role === 'shipper' ? 'Carrier' : 'Shipper')} • ${dateStr} ${timeStr}</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+          <span style="font-weight: 700; color: var(--text-main); font-size: 13px;">Proposed Offer</span>
+          <span style="font-size: 10px; font-weight: 700; background: hsl(120, 20%, 94%); color: #16a34a; padding: 2px 8px; border-radius: 20px;">Offer</span>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <span style="font-size: 28px; font-weight: 800; color: var(--accent-carrier);">$${msg.amount.toLocaleString()}</span>
+          <span style="font-size: 11px; color: var(--text-muted);">Trailer: <strong>${trailerType}</strong></span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: var(--text-main);">
+          <div>
+            <span style="display: block; font-size: 10px; color: var(--text-muted);">Est. Pickup</span>
+            <strong>${pickupDateStr}</strong>
+          </div>
+          <div>
+            <span style="display: block; font-size: 10px; color: var(--text-muted);">Est. Delivery</span>
+            <strong>${deliveryDateStr}</strong>
+          </div>
+        </div>
+        
+        ${notes ? `
+          <div style="font-size: 11px; font-style: italic; background: #f8fafc; padding: 8px; border-radius: 4px; border-left: 3px solid var(--border-color);">
+            "${notes}"
+          </div>
+        ` : ''}
+        
+        <div style="font-size: 11px; color: var(--text-muted);">
+          By ${isMe ? 'You' : (currentUser.role === 'shipper' ? 'Carrier' : 'Shipper')} • ${dateStr} ${timeStr}
+        </div>
         
         ${showButtons ? `
-          <div style="display: flex; gap: 8px; justify-content: center;">
-            <button class="btn btn-danger btn-sm btn-counter-decline" style="padding: 4px 12px; font-size: 12px;">Decline</button>
-            <button class="btn btn-secondary btn-sm btn-counter-accept" style="padding: 4px 12px; font-size: 12px; background: #22c55e; border-color: #22c55e;">Accept</button>
+          <div style="display: flex; gap: 8px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <button class="btn btn-outline btn-sm btn-offer-decline" style="flex: 1; padding: 6px; font-size: 11px; border-color: #ef4444; color: #ef4444; background: white;">Decline</button>
+            <button class="btn btn-outline btn-sm btn-offer-counter" style="flex: 1; padding: 6px; font-size: 11px; background: white;">Counter</button>
+            <button class="btn btn-primary btn-sm btn-offer-accept" style="flex: 1; padding: 6px; font-size: 11px; background: #22c55e; border-color: #22c55e; color: white;">Accept</button>
           </div>
         ` : `
-          <div style="font-size: 12px; font-weight: 600; color: ${isPending ? '#d97706' : (bid.amount === msg.amount && shipment.carrierId === bid.carrierId ? '#16a34a' : '#94a3b8')};">
+          <div style="border-top: 1px solid var(--border-color); padding-top: 8px; font-size: 12px; font-weight: 600; text-align: center; color: ${isPending ? '#d97706' : (bid.amount === msg.amount && shipment.carrierId === bid.carrierId ? '#16a34a' : '#94a3b8')};">
             ${isPending ? 'Awaiting Response' : (bid.amount === msg.amount && shipment.carrierId === bid.carrierId ? '✓ Accepted' : '❌ Superseded / Declined')}
           </div>
         `}
       `;
       
       if (showButtons) {
-        cardDiv.querySelector('.btn-counter-accept').onclick = () => {
+        cardDiv.querySelector('.btn-offer-accept').onclick = () => {
           acceptCounterOffer(bidId, msg.amount);
           setTimeout(() => {
             renderInboxConversationList(currentInboxFilter);
             renderInboxWorkspaceContent(bidId);
           }, 200);
         };
-        cardDiv.querySelector('.btn-counter-decline').onclick = () => {
+        cardDiv.querySelector('.btn-offer-decline').onclick = () => {
           declineCounterOffer(bidId, msg.amount);
           setTimeout(() => {
             renderInboxConversationList(currentInboxFilter);
             renderInboxWorkspaceContent(bidId);
           }, 200);
+        };
+        cardDiv.querySelector('.btn-offer-counter').onclick = () => {
+          openCounterOfferModal(bidId);
         };
       }
       
@@ -5150,6 +6397,11 @@ function renderInboxChatHistory(bidId) {
           ${isMe ? 'You' : msg.senderName}
         </div>
         <div class="inbox-chat-bubble-content" style="padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-break: break-word; box-shadow: var(--shadow-sm); background: ${isMe ? 'var(--accent-shipper)' : 'white'}; color: ${isMe ? 'white' : 'var(--text-main)'}; border-bottom-right-radius: ${isMe ? '4px' : '18px'}; border-bottom-left-radius: ${isMe ? '18px' : '4px'}; ${!isMe ? 'border: 1px solid var(--border-color);' : ''}">
+          ${msg.imageAttachment ? `
+            <div style="margin-bottom: 8px; border-radius: 8px; overflow: hidden; max-width: 100%; border: 1px solid var(--border-color);">
+              <img src="${msg.imageAttachment}" style="width: 100%; height: auto; max-height: 200px; object-fit: contain; cursor: pointer;" onclick="window.open('${msg.imageAttachment}', '_blank')">
+            </div>
+          ` : ''}
           ${escapeHtml(msg.message)}
         </div>
         <div class="inbox-chat-bubble-meta" style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding: 0 4px; display: flex; align-items: center; gap: 4px; justify-content: ${isMe ? 'flex-end' : 'flex-start'};">
@@ -5160,6 +6412,33 @@ function renderInboxChatHistory(bidId) {
       container.appendChild(bubble);
     }
   });
+  
+  // Append simulated typing indicator if appropriate
+  if (shipment.status === 'negotiating' && !isClosed) {
+    const typingDiv = document.createElement('div');
+    typingDiv.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      width: fit-content;
+      margin: 8px 0;
+      font-size: 11px;
+      color: var(--text-muted);
+      align-self: flex-start;
+      box-shadow: var(--shadow-sm);
+    `;
+    typingDiv.innerHTML = `
+      <span class="typing-dot" style="animation: typing 1s infinite 0s;"></span>
+      <span class="typing-dot" style="animation: typing 1s infinite 0.2s;"></span>
+      <span class="typing-dot" style="animation: typing 1s infinite 0.4s;"></span>
+      <span style="margin-left: 4px; font-weight: 500;">${partnerName} is typing...</span>
+    `;
+    container.appendChild(typingDiv);
+  }
   
   container.scrollTop = container.scrollHeight;
 }
@@ -5372,6 +6651,9 @@ function setupNegotiationModalEvents() {
 
 // --- SETUP EVENT LISTENERS ---
 function initApp() {
+  bindAuthFormSubmit();
+  setAuthMode('login');
+
   // Navigation Logo returns home
   elements.logo.addEventListener('click', () => {
     const user = Store.getCurrentUser();
@@ -5397,32 +6679,266 @@ function initApp() {
   elements.tabLogin.addEventListener('click', () => setAuthMode('login'));
   elements.tabRegister.addEventListener('click', () => setAuthMode('register'));
   
-  // Auth Form Submission
-  elements.authForm.addEventListener('submit', (e) => {
+function bindAuthFormSubmit() {
+  if (!elements.authForm) return;
+  
+  elements.authForm.onsubmit = (e) => {
     e.preventDefault();
-    elements.authError.classList.add('d-none');
-    
+    const errorEl = document.getElementById('auth-error') || elements.authError;
+    if (errorEl) {
+      errorEl.classList.add('d-none');
+      errorEl.innerHTML = '';
+    }
+
     const username = elements.authUsername.value.trim();
     const password = elements.authPassword.value;
     const mode = elements.authModeInput.value;
     
+    console.log(`=== Auth Form Submission [${mode.toUpperCase()}] ===`);
+    console.log(`Username entered: ${username}`);
+    
     try {
       let user;
       if (mode === 'login') {
+        console.log(`Attempting login for user: ${username}...`);
         user = Store.loginUser(username, password);
+        console.log("Login successful! User object:", JSON.stringify(user, null, 2));
         showToast(`Welcome back, ${user.companyName}!`);
+        switchView(user.role);
       } else {
+        console.log("Validating registration fields...");
+        const errors = [];
+        
+        // 1. Username
+        if (!username) {
+          errors.push("Username is required.");
+          updateFieldValidationState(elements.authUsername, false, "Username is required.");
+        } else if (username.length < 3) {
+          errors.push("Username must be at least 3 characters long.");
+          updateFieldValidationState(elements.authUsername, false, "Username must be at least 3 characters long.");
+        } else {
+          updateFieldValidationState(elements.authUsername, true);
+        }
+        
+        // 2. Contact Name
+        const contactNameInput = document.getElementById('auth-contact-name');
+        const contactName = contactNameInput ? contactNameInput.value.trim() : '';
+        if (!contactName) {
+          errors.push("Contact name is required.");
+          updateFieldValidationState(contactNameInput, false, "Contact name is required.");
+        } else {
+          updateFieldValidationState(contactNameInput, true);
+        }
+
+        // 3. Email Address
+        const emailInput = document.getElementById('auth-email');
+        const email = emailInput ? emailInput.value.trim() : '';
+        if (!email) {
+          errors.push("Email address is required.");
+          updateFieldValidationState(emailInput, false, "Email address is required.");
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          errors.push("Please enter a valid email address.");
+          updateFieldValidationState(emailInput, false, "Please enter a valid email address.");
+        } else {
+          updateFieldValidationState(emailInput, true);
+        }
+
+        // 4. Phone Number
+        const phoneInput = document.getElementById('auth-phone');
+        const phone = phoneInput ? phoneInput.value.trim() : '';
+        const digits = phone.replace(/\D/g, '');
+        if (!phone) {
+          errors.push("Mobile phone number is required.");
+          updateFieldValidationState(phoneInput, false, "Mobile phone number is required.");
+        } else if (digits.length < 10) {
+          errors.push("Please enter a valid 10-digit mobile phone number.");
+          updateFieldValidationState(phoneInput, false, "Please enter a valid 10-digit mobile phone number.");
+        } else {
+          updateFieldValidationState(phoneInput, true);
+        }
+
+        // 5. Company Name
+        const companyName = elements.authCompany.value.trim();
+        if (!companyName) {
+          errors.push("Company name is required.");
+          updateFieldValidationState(elements.authCompany, false, "Company name is required.");
+        } else {
+          updateFieldValidationState(elements.authCompany, true);
+        }
+
+        // 6. Password
+        const passwordInput = elements.authPassword;
+        const isComplexityValid = updatePasswordLiveRequirements(password);
+        if (!password) {
+          errors.push("Password is required.");
+          updateFieldValidationState(passwordInput, false, "Password is required.");
+        } else if (password.length < 8) {
+          errors.push("Password must be at least 8 characters.");
+          updateFieldValidationState(passwordInput, false, "Password must be at least 8 characters.");
+        } else if (!isComplexityValid) {
+          errors.push("Password does not meet complexity requirements.");
+          updateFieldValidationState(passwordInput, false, "Password does not meet complexity requirements.");
+        } else {
+          updateFieldValidationState(passwordInput, true);
+        }
+
+        // 7. Confirm Password
+        const confirmPasswordInput = document.getElementById('auth-confirm-password');
+        const confirmPassword = confirmPasswordInput ? confirmPasswordInput.value : '';
+        if (!confirmPassword) {
+          errors.push("Please confirm your password.");
+          updateFieldValidationState(confirmPasswordInput, false, "Please confirm your password.");
+        } else if (password !== confirmPassword) {
+          errors.push("Passwords do not match.");
+          updateFieldValidationState(confirmPasswordInput, false, "Passwords do not match.");
+        } else {
+          updateFieldValidationState(confirmPasswordInput, true);
+        }
+
+        // 8. Role Select
         const role = document.querySelector('input[name="auth-role"]:checked').value;
-        const company = elements.authCompany.value.trim();
-        user = Store.registerUser(username, password, role, company);
-        showToast(`Account registered for ${user.companyName}!`);
+
+        // Carrier details if carrier
+        let mcNumber = '';
+        let dotNumber = '';
+        let selectedEquipment = [];
+
+        if (role === 'carrier') {
+          const mcInput = document.getElementById('auth-mc-number');
+          const dotInput = document.getElementById('auth-dot-number');
+          const equipContainer = document.getElementById('auth-equipment-container');
+          
+          mcNumber = mcInput ? mcInput.value.trim() : '';
+          dotNumber = dotInput ? dotInput.value.trim() : '';
+
+          if (!mcNumber) {
+            errors.push("MC Number is required for Carriers.");
+            updateFieldValidationState(mcInput, false, "MC Number is required for Carriers.");
+          } else {
+            updateFieldValidationState(mcInput, true);
+          }
+
+          if (!dotNumber) {
+            errors.push("DOT Number is required for Carriers.");
+            updateFieldValidationState(dotInput, false, "DOT Number is required for Carriers.");
+          } else {
+            updateFieldValidationState(dotInput, true);
+          }
+
+          const checkedCheckboxes = document.querySelectorAll('.auth-equipment-checkbox:checked');
+          checkedCheckboxes.forEach(cb => selectedEquipment.push(cb.value));
+
+          const equipErrEl = document.getElementById('err-auth-equipment');
+          if (selectedEquipment.length === 0) {
+            errors.push("Please select at least one Equipment Type.");
+            if (equipContainer) {
+              equipContainer.style.borderColor = '#ef4444';
+              equipContainer.style.boxShadow = '0 0 0 2px rgba(239, 68, 68, 0.15)';
+            }
+            if (equipErrEl) {
+              equipErrEl.textContent = "Please select at least one Equipment Type.";
+              equipErrEl.style.display = 'block';
+              equipErrEl.style.opacity = '1';
+            }
+          } else {
+            if (equipContainer) {
+              equipContainer.style.borderColor = '#22c55e';
+              equipContainer.style.boxShadow = '0 0 0 2px rgba(34, 197, 94, 0.15)';
+            }
+            if (equipErrEl) {
+              equipErrEl.style.opacity = '0';
+              equipErrEl.style.display = 'none';
+            }
+          }
+        }
+
+        if (errors.length > 0) {
+          throw new Error(errors.join("<br>"));
+        }
+
+        const additionalData = {
+          contactName,
+          email,
+          phone
+        };
+
+        if (role === 'carrier') {
+          additionalData.mcNumber = mcNumber;
+          additionalData.dotNumber = dotNumber;
+          additionalData.equipmentTypes = selectedEquipment;
+        }
+
+        console.log("All validations passed. Calling Store.registerUser...");
+        
+        // Show Button Loading State
+        elements.authSubmitBtn.disabled = true;
+        elements.authSubmitBtn.innerHTML = '<span class="loading-spinner" style="display: inline-block; width: 14px; height: 14px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></span> Creating Account...';
+
+        user = Store.registerUser(username, password, role, companyName, additionalData);
+        console.log("Registration successful! Registered user object:", JSON.stringify(user, null, 2));
+
+        // Display premium success screen inside the card
+        const card = document.querySelector('.auth-card');
+        if (card) {
+          card.innerHTML = `
+            <div id="auth-success-screen" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; animation: fadeIn 0.4s ease-in-out;">
+              <div style="width: 64px; height: 64px; border-radius: 50%; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);">✓</div>
+              <h2 style="font-size: 22px; font-weight: 800; color: var(--text-main); margin: 0 0 8px 0;">Welcome to Movana</h2>
+              <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 24px 0; line-height: 1.5;">
+                Your account has been created successfully.<br>Redirecting to your dashboard...
+              </p>
+              <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid #22c55e; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            </div>
+          `;
+        }
+
+        setTimeout(() => {
+          showToast(`Welcome to Movana, ${user.companyName}!`);
+          switchView(user.role);
+          // Restore the auth card structure
+          setTimeout(() => {
+            if (card) {
+              card.innerHTML = `
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <img src="logo.svg" alt="Movana Logo" style="width: 80px; height: auto;">
+                </div>
+                <div class="auth-tab">
+                  <button class="tab-btn active" id="tab-login">Login</button>
+                  <button class="tab-btn" id="tab-register">Register</button>
+                </div>
+                <h2 id="auth-title">Welcome Back</h2>
+                <p id="auth-subtitle">Sign in to manage your shipments and bids.</p>
+                <form id="auth-form"></form>
+              `;
+              elements.tabLogin = document.getElementById('tab-login');
+              elements.tabRegister = document.getElementById('tab-register');
+              elements.authTitle = document.getElementById('auth-title');
+              elements.authSubtitle = document.getElementById('auth-subtitle');
+              elements.authForm = document.getElementById('auth-form');
+              
+              elements.tabLogin.addEventListener('click', () => setAuthMode('login'));
+              elements.tabRegister.addEventListener('click', () => setAuthMode('register'));
+              bindAuthFormSubmit();
+              setAuthMode('login');
+            }
+          }, 500);
+        }, 2000);
       }
-      switchView(user.role);
     } catch (err) {
-      elements.authError.textContent = err.message;
-      elements.authError.classList.remove('d-none');
+      console.error(`Authentication error [${mode.toUpperCase()}]:`, err.message);
+      const errBox = document.getElementById('auth-error') || elements.authError;
+      if (errBox) {
+        errBox.innerHTML = err.message;
+        errBox.classList.remove('d-none');
+      }
+      
+      if (elements.authSubmitBtn) {
+        elements.authSubmitBtn.disabled = false;
+        elements.authSubmitBtn.innerHTML = mode === 'login' ? 'Sign In' : 'Create Account';
+      }
     }
-  });
+  };
+}
   
   // Shipper Form Submission
   elements.postShipmentForm.addEventListener('submit', async (e) => {
