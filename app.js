@@ -11,154 +11,421 @@
   }
   const Store = window.Store;
 
+
+  // ==========================================
+  // EMAIL TEMPLATE ENGINE & DELIVERY SERVICE
+  // ==========================================
+
+  const EmailTemplates = {
+    wrap: (title, bodyHtml) => `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #334155; margin: 0; padding: 0; }
+      .wrapper { width: 100%; table-layout: fixed; background-color: #f8fafc; padding: 40px 0; }
+      .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+      .header { background-color: #0f172a; padding: 24px; text-align: center; }
+      .logo { height: 35px; width: auto; vertical-align: middle; }
+      .content { padding: 32px 24px; line-height: 1.6; }
+      .title { font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 0; margin-bottom: 16px; }
+      .btn { display: inline-block; padding: 12px 24px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; margin-top: 16px; font-size: 14px; text-align: center; }
+      .otp-box { font-size: 32px; font-weight: 800; color: #0f172a; background-color: #f1f5f9; padding: 16px; border-radius: 8px; text-align: center; letter-spacing: 4px; margin: 24px 0; font-family: monospace; border: 1px solid #e2e8f0; }
+      .footer { background-color: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="container">
+        <div class="header">
+          <img class="logo" src="https://movana.vercel.app/logo.svg" alt="Movana Logo" style="height: 35px; width: auto;">
+        </div>
+        <div class="content">
+          ${bodyHtml}
+        </div>
+        <div class="footer">
+          © ${new Date().getFullYear()} Movana Marketplace. All rights reserved.<br>
+          100 Main St, Chicago, IL 60601
+        </div>
+      </div>
+    </div>
+  </body>
+  </html>
+  `,
+
+    emailVerificationOtp: (username, otp) => {
+      const html = EmailTemplates.wrap("Verify your Movana Account", `
+        <h1 class="title">Verify Your Email Address</h1>
+        <p>Hello ${username},</p>
+        <p>Thank you for registering with Movana. Please use the verification code below to activate your account:</p>
+        <div class="otp-box">${otp}</div>
+        <p>This code is valid for 5 minutes. If you did not request this email, please ignore it.</p>
+      `);
+      const text = `Hello ${username},\n\nThank you for registering with Movana. Your email verification code is: ${otp}\n\nThis code is valid for 5 minutes.`;
+      return { subject: "Verify your Movana Account", html, text };
+    },
+
+    passwordResetOtp: (username, otp) => {
+      const html = EmailTemplates.wrap("Reset your Movana Password", `
+        <h1 class="title">Reset Your Password</h1>
+        <p>Hello ${username},</p>
+        <p>We received a request to change your password. Use the verification code below to authorize this change:</p>
+        <div class="otp-box">${otp}</div>
+        <p>This code is valid for 5 minutes. If you did not request this, please verify your account security.</p>
+      `);
+      const text = `Hello ${username},\n\nWe received a request to change your password. Your authorization verification code is: ${otp}\n\nThis code is valid for 5 minutes.`;
+      return { subject: "Reset your Movana Password", html, text };
+    },
+
+    emailChangeOtp: (username, otp) => {
+      const html = EmailTemplates.wrap("Confirm Email Address Change", `
+        <h1 class="title">Confirm Email Address Change</h1>
+        <p>Hello ${username},</p>
+        <p>We received a request to change your email address. Enter this verification code to confirm the change:</p>
+        <div class="otp-box">${otp}</div>
+        <p>This code is sent to your current verified address. If you did not initiate this request, please contact support immediately.</p>
+      `);
+      const text = `Hello ${username},\n\nWe received a request to change your email address. Confirm with verification code: ${otp}\n\nIf you did not initiate this, contact support.`;
+      return { subject: "Confirm Email Address Change", html, text };
+    },
+
+    phoneChangeOtp: (username, otp) => {
+      const html = EmailTemplates.wrap("Confirm Phone Number Change", `
+        <h1 class="title">Confirm Phone Number Change</h1>
+        <p>Hello ${username},</p>
+        <p>We received a request to update your mobile phone number. Enter this verification code to authorize the change:</p>
+        <div class="otp-box">${otp}</div>
+        <p>This code is valid for 5 minutes.</p>
+      `);
+      const text = `Hello ${username},\n\nConfirm phone number change with verification code: ${otp}\n\nThis code is valid for 5 minutes.`;
+      return { subject: "Confirm Phone Number Change", html, text };
+    },
+
+    welcomeEmail: (username) => {
+      const html = EmailTemplates.wrap("Welcome to Movana!", `
+        <h1 class="title">Welcome to the Movana Marketplace</h1>
+        <p>Hello ${username},</p>
+        <p>Your account is now fully verified and ready. Log in to start listing shipments or bidding on loads today!</p>
+        <a class="btn" href="https://movana.vercel.app/auth" style="color: #ffffff;">Get Started</a>
+      `);
+      const text = `Hello ${username},\n\nWelcome to the Movana Marketplace! Your account is verified. Visit https://movana.vercel.app/auth to get started.`;
+      return { subject: "Welcome to Movana!", html, text };
+    },
+
+    accountActivated: (username) => {
+      const html = EmailTemplates.wrap("Movana Account Activated", `
+        <h1 class="title">Account Activated Successfully</h1>
+        <p>Hello ${username},</p>
+        <p>Your email verification is complete, and your profile is now active on the Movana platform.</p>
+      `);
+      const text = `Hello ${username},\n\nYour email verification is complete, and your Movana profile is now active.`;
+      return { subject: "Movana Account Activated", html, text };
+    },
+
+    shipmentPosted: (username, cargoType, origin, destination) => {
+      const html = EmailTemplates.wrap("Your Shipment is Live on Movana", `
+        <h1 class="title">Your Shipment is Live</h1>
+        <p>Hello ${username},</p>
+        <p>Your shipment listing for <strong>${cargoType}</strong> from <strong>${origin}</strong> to <strong>${destination}</strong> has been successfully posted to the Load Board.</p>
+        <p>We will notify you as soon as carriers submit bids.</p>
+      `);
+      const text = `Hello ${username},\n\nYour shipment listing for ${cargoType} from ${origin} to ${destination} is now live on the Load Board.`;
+      return { subject: "Your Shipment is Live on Movana", html, text };
+    },
+
+    newBidReceived: (username, cargoType, carrierName, amount) => {
+      const html = EmailTemplates.wrap("New Bid Received on your Shipment", `
+        <h1 class="title">New Bid Received</h1>
+        <p>Hello ${username},</p>
+        <p>You have received a new bid of <strong>$${amount}</strong> from carrier <strong>${carrierName}</strong> for your shipment: <strong>${cargoType}</strong>.</p>
+        <a class="btn" href="https://movana.vercel.app/inbox" style="color: #ffffff;">Review Bid</a>
+      `);
+      const text = `Hello ${username},\n\nYou have received a new bid of $${amount} from carrier ${carrierName} for shipment: ${cargoType}. Review bid at https://movana.vercel.app/inbox`;
+      return { subject: "New Bid Received on your Shipment", html, text };
+    },
+
+    bidAccepted: (username, cargoType, amount) => {
+      const html = EmailTemplates.wrap("Your Bid was Accepted!", `
+        <h1 class="title">Bid Accepted!</h1>
+        <p>Hello ${username},</p>
+        <p>Congratulations! Your bid of <strong>$${amount}</strong> for shipment <strong>${cargoType}</strong> has been accepted by the shipper.</p>
+        <p>Please check your inbox to view delivery coordinates and coordinate pickup.</p>
+        <a class="btn" href="https://movana.vercel.app/inbox" style="color: #ffffff;">View Details</a>
+      `);
+      const text = `Hello ${username},\n\nCongratulations! Your bid of $${amount} for shipment ${cargoType} has been accepted. View details at https://movana.vercel.app/inbox`;
+      return { subject: "Your Bid was Accepted!", html, text };
+    },
+
+    shipmentDelivered: (username, cargoType) => {
+      const html = EmailTemplates.wrap("Shipment Marked as Delivered", `
+        <h1 class="title">Shipment Delivered</h1>
+        <p>Hello ${username},</p>
+        <p>Your shipment of <strong>${cargoType}</strong> has been marked as delivered by the carrier.</p>
+        <p>Please review and release the payment from your dashboard.</p>
+      `);
+      const text = `Hello ${username},\n\nYour shipment of ${cargoType} has been marked as delivered. Please review and release payment.`;
+      return { subject: "Shipment Marked as Delivered", html, text };
+    },
+
+    newMessageNotification: (username, senderName, messageSnippet) => {
+      const html = EmailTemplates.wrap(`New Message from ${senderName}`, `
+        <h1 class="title">New Message Received</h1>
+        <p>Hello ${username},</p>
+        <p>You have received a new message from <strong>${senderName}</strong> regarding your negotiation:</p>
+        <blockquote style="border-left: 4px solid #cbd5e1; padding-left: 16px; margin: 20px 0; color: #475569; font-style: italic;">
+          "${messageSnippet}"
+        </blockquote>
+        <a class="btn" href="https://movana.vercel.app/inbox" style="color: #ffffff;">Reply in Inbox</a>
+      `);
+      const text = `Hello ${username},\n\nYou have received a new message from ${senderName}: "${messageSnippet}"\n\nReply at https://movana.vercel.app/inbox`;
+      return { subject: `New Message from ${senderName}`, html, text };
+    }
+  };
+
+  async function sendEmail(to, subject, html, text, templateName) {
+    const emailLog = {
+      recipient: to,
+      template: templateName,
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      response: '',
+      error: ''
+    };
+
+    const logEmailInStore = (log) => {
+      try {
+        const logs = JSON.parse(localStorage.getItem('movana_email_logs') || '[]');
+        logs.push(log);
+        localStorage.setItem('movana_email_logs', JSON.stringify(logs));
+      } catch (e) {
+        console.error("Failed to write email logs:", e);
+      }
+    };
+
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+
+    if (isLocal) {
+      console.log(`\n===== DEVELOPMENT EMAIL (Simulated) =====`);
+      console.log(`Recipient: ${to}`);
+      console.log(`Subject: ${subject}`);
+      console.log(`Template: ${templateName}`);
+      if (html.includes("class=\"otp-box\"") || html.includes("class='otp-box'") || html.includes("otp-box")) {
+        const otpMatch = html.match(/otp-box">(\d{6})<\/div>/) || html.match(/>(\d{6})<\/div>/);
+        const otp = otpMatch ? otpMatch[1] : 'UNKNOWN';
+        console.log(`===== DEVELOPMENT OTP: ${otp} =====`);
+      } else {
+        console.log(`Plain Text Fallback:\n${text}`);
+      }
+      console.log(`=========================================\n`);
+
+      emailLog.status = 'delivered';
+      emailLog.response = 'Simulated Delivery (Local Development)';
+      logEmailInStore(emailLog);
+      return true;
+    }
+
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, html, text })
+      });
+
+      const result = await res.json();
+      if (res.ok) {
+        emailLog.status = 'delivered';
+        emailLog.response = JSON.stringify(result);
+        logEmailInStore(emailLog);
+        return true;
+      } else {
+        emailLog.status = 'failed';
+        emailLog.error = result.error || 'Unknown server error';
+        logEmailInStore(emailLog);
+        throw new Error(result.error || 'Serverless mail API error');
+      }
+    } catch (err) {
+      console.error("Email delivery failed:", err);
+      emailLog.status = 'failed';
+      emailLog.error = err.message;
+      logEmailInStore(emailLog);
+      throw err;
+    }
+  }
+
   // Monkey-patch Store.createShipment to persist equipmentRequired without modifying store.js
   (function() {
     const originalCreateShipment = Store.createShipment;
-  Store.createShipment = function(shipperId, shipperName, shipmentData) {
-    console.log("=== DEBUG: Store.createShipment CALLED ===");
-    console.log("Form value received (equipmentRequired):", shipmentData.equipmentRequired);
-    console.log("Shipment object before save:", JSON.stringify(shipmentData, null, 2));
+    Store.createShipment = function(shipperId, shipperName, shipmentData) {
+      console.log("=== DEBUG: Store.createShipment CALLED ===");
+      console.log("Form value received (equipmentRequired):", shipmentData.equipmentRequired);
+      console.log("Shipment object before save:", JSON.stringify(shipmentData, null, 2));
 
-    // Call the original createShipment to perform standard storage
-    const result = originalCreateShipment.call(this, shipperId, shipperName, shipmentData);
+      // Call the original createShipment to perform standard storage
+      const result = originalCreateShipment.call(this, shipperId, shipperName, shipmentData);
 
-    // Persist equipmentRequired by writing directly to localStorage
-    const stored = localStorage.getItem('movana_store_data');
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        const found = data.shipments.find(s => s.id === result.id);
-        if (found) {
-          found.equipmentRequired = shipmentData.equipmentRequired || 'Dry Van';
-          localStorage.setItem('movana_store_data', JSON.stringify(data));
-        }
-      } catch (e) {
-        console.error('Error in monkey-patched createShipment', e);
-      }
-    }
-
-    // Add property to returned result clone
-    result.equipmentRequired = shipmentData.equipmentRequired || 'Dry Van';
-    
-    console.log("Shipment object after save:", JSON.stringify(result, null, 2));
-    console.log("==========================================");
-
-    return result;
-  };
-})();
-
-// Monkey-patch Store.createBid to persist earliestPickupDate without modifying store.js
-(function() {
-  const originalCreateBid = Store.createBid;
-  Store.createBid = function(carrierId, carrierName, shipmentId, bidData) {
-    const result = originalCreateBid.call(this, carrierId, carrierName, shipmentId, bidData);
-    
-    const stored = localStorage.getItem('movana_store_data');
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        const found = data.bids.find(b => b.id === result.id);
-        if (found) {
-          found.earliestPickupDate = bidData.earliestPickupDate || result.deliveryDate;
-          localStorage.setItem('movana_store_data', JSON.stringify(data));
-        }
-      } catch (e) {
-        console.error('Error in monkey-patched createBid', e);
-      }
-    }
-    
-    result.earliestPickupDate = bidData.earliestPickupDate || result.deliveryDate;
-    return result;
-  };
-})();
-
-// Chronological timeline activity event logger
-function logShipmentEvent(shipmentId, eventType, label, desc, additional = {}) {
-  const stored = localStorage.getItem('movana_store_data');
-  if (!stored) return;
-  try {
-    const data = JSON.parse(stored);
-    const shipment = data.shipments.find(s => s.id === shipmentId);
-    if (shipment) {
-      if (!shipment.history) {
-        shipment.history = [
-          {
-            event: 'created',
-            label: 'Shipment Created',
-            desc: `Shipment listed on the marketplace with a budget of $${shipment.budget.toLocaleString()}.`,
-            timestamp: shipment.createdAt || new Date().toISOString()
+      // Persist equipmentRequired by writing directly to localStorage
+      const stored = localStorage.getItem('movana_store_data');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          const found = data.shipments.find(s => s.id === result.id);
+          if (found) {
+            found.equipmentRequired = shipmentData.equipmentRequired || 'Dry Van';
+            localStorage.setItem('movana_store_data', JSON.stringify(data));
           }
-        ];
+        } catch (e) {
+          console.error('Error in monkey-patched createShipment', e);
+        }
+      }
+
+      // Add property to returned result clone
+      result.equipmentRequired = shipmentData.equipmentRequired || 'Dry Van';
+      
+      console.log("Shipment object after save:", JSON.stringify(result, null, 2));
+      console.log("==========================================");
+
+      return result;
+    };
+  })();
+
+  // Monkey-patch Store.createBid to persist earliestPickupDate without modifying store.js
+  (function() {
+    const originalCreateBid = Store.createBid;
+    Store.createBid = function(carrierId, carrierName, shipmentId, bidData) {
+      const result = originalCreateBid.call(this, carrierId, carrierName, shipmentId, bidData);
+      
+      const stored = localStorage.getItem('movana_store_data');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          const found = data.bids.find(b => b.id === result.id);
+          if (found) {
+            found.earliestPickupDate = bidData.earliestPickupDate || result.deliveryDate;
+            localStorage.setItem('movana_store_data', JSON.stringify(data));
+          }
+        } catch (e) {
+          console.error('Error in monkey-patched createBid', e);
+        }
       }
       
-      // Prevent duplicate events for unique status transitions
-      if (['picked up', 'in transit', 'delivered', 'completed', 'awarded'].includes(eventType)) {
-        const exists = shipment.history.some(h => h.event === eventType);
-        if (exists) return;
+      result.earliestPickupDate = bidData.earliestPickupDate || result.deliveryDate;
+      return result;
+    };
+  })();
+
+  // Chronological timeline activity event logger
+  function logShipmentEvent(shipmentId, eventType, label, desc, additional = {}) {
+    const stored = localStorage.getItem('movana_store_data');
+    if (!stored) return;
+    try {
+      const data = JSON.parse(stored);
+      const shipment = data.shipments.find(s => s.id === shipmentId);
+      if (shipment) {
+        if (!shipment.history) {
+          shipment.history = [
+            {
+              event: 'created',
+              label: 'Shipment Created',
+              desc: `Shipment listed on the marketplace with a budget of $${shipment.budget.toLocaleString()}.`,
+              timestamp: shipment.createdAt || new Date().toISOString()
+            }
+          ];
+        }
+        
+        // Prevent duplicate events for unique status transitions
+        if (['picked up', 'in transit', 'delivered', 'completed', 'awarded'].includes(eventType)) {
+          const exists = shipment.history.some(h => h.event === eventType);
+          if (exists) return;
+        }
+        
+        shipment.history.push({
+          event: eventType,
+          label,
+          desc,
+          timestamp: new Date().toISOString(),
+          ...additional
+        });
+        
+        localStorage.setItem('movana_store_data', JSON.stringify(data));
+        console.log(`[ACTIVITY LOG] Logged event '${eventType}' for Shipment ${shipmentId}`);
       }
-      
-      shipment.history.push({
-        event: eventType,
-        label,
-        desc,
-        timestamp: new Date().toISOString(),
-        ...additional
-      });
-      
-      localStorage.setItem('movana_store_data', JSON.stringify(data));
-      console.log(`[ACTIVITY LOG] Logged event '${eventType}' for Shipment ${shipmentId}`);
+    } catch (e) {
+      console.error('Error logging shipment event', e);
     }
-  } catch (e) {
-    console.error('Error logging shipment event', e);
   }
-}
 
-// Monkey-patch Store.addNegotiationMessage to support system flags, custom fields, and attachments
-(function() {
-  const originalAddNegMsg = Store.addNegotiationMessage;
-  Store.addNegotiationMessage = function(bidId, senderId, senderName, message, amount = null, isSystem = false, additionalFields = null) {
-    const result = originalAddNegMsg.call(this, bidId, senderId, senderName, message, amount);
-    
-    const stored = localStorage.getItem('movana_store_data');
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        const neg = data.negotiations.find(n => n.bidId === bidId);
-        if (neg && neg.messages.length > 0) {
-          const latestMsg = neg.messages[neg.messages.length - 1];
-          if (isSystem) {
-            latestMsg.isSystem = true;
+  // Monkey-patch Store.addNegotiationMessage to support system flags, custom fields, attachments, and email notifications
+  (function() {
+    const originalAddNegMsg = Store.addNegotiationMessage;
+    Store.addNegotiationMessage = function(bidId, senderId, senderName, message, amount = null, isSystem = false, additionalFields = null) {
+      const result = originalAddNegMsg.call(this, bidId, senderId, senderName, message, amount);
+      
+      const stored = localStorage.getItem('movana_store_data');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          const neg = data.negotiations.find(n => n.bidId === bidId);
+          if (neg && neg.messages.length > 0) {
+            const latestMsg = neg.messages[neg.messages.length - 1];
+            if (isSystem) {
+              latestMsg.isSystem = true;
+            }
+            if (additionalFields) {
+              latestMsg.pickupDate = additionalFields.pickupDate || null;
+              latestMsg.deliveryDate = additionalFields.deliveryDate || null;
+              latestMsg.trailerType = additionalFields.trailerType || null;
+              latestMsg.notes = additionalFields.notes || null;
+              latestMsg.imageAttachment = additionalFields.imageAttachment || null;
+            }
+            localStorage.setItem('movana_store_data', JSON.stringify(data));
           }
-          if (additionalFields) {
-            latestMsg.pickupDate = additionalFields.pickupDate || null;
-            latestMsg.deliveryDate = additionalFields.deliveryDate || null;
-            latestMsg.trailerType = additionalFields.trailerType || null;
-            latestMsg.notes = additionalFields.notes || null;
-            latestMsg.imageAttachment = additionalFields.imageAttachment || null;
+
+          // CENTRALIZED NEGOTIATION CHAT EMAIL TRIGGERS
+          if (!isSystem && message) {
+            const bid = data.bids.find(b => b.id === bidId);
+            if (bid) {
+              const shipment = data.shipments.find(s => s.id === bid.shipmentId);
+              if (shipment) {
+                const senderUser = data.users.find(u => u.id === senderId);
+                const senderDisplayName = senderUser ? (senderUser.companyName || senderUser.username) : senderName;
+                
+                const recipientId = senderId === shipment.shipperId ? bid.carrierId : shipment.shipperId;
+                const recipientUser = data.users.find(u => u.id === recipientId);
+                
+                if (recipientUser && recipientUser.email) {
+                  const snippet = message.length > 120 ? message.substring(0, 120) + '...' : message;
+                  const emailTemplate = EmailTemplates.newMessageNotification(recipientUser.username, senderDisplayName, snippet);
+                  sendEmail(recipientUser.email, emailTemplate.subject, emailTemplate.html, emailTemplate.text, "newMessageNotification").catch(e => {
+                    console.error("Failed to send message email:", e);
+                  });
+                }
+              }
+            }
           }
-          localStorage.setItem('movana_store_data', JSON.stringify(data));
+        } catch (e) {
+          console.error('Error in monkey-patched addNegotiationMessage', e);
         }
-      } catch (e) {
-        console.error('Error in monkey-patched addNegotiationMessage', e);
       }
-    }
-    
-    if (result && result.messages.length > 0) {
-      const latestMsg = result.messages[result.messages.length - 1];
-      if (isSystem) {
-        latestMsg.isSystem = true;
+      
+      if (result && result.messages.length > 0) {
+        const latestMsg = result.messages[result.messages.length - 1];
+        if (isSystem) {
+          latestMsg.isSystem = true;
+        }
+        if (additionalFields) {
+          latestMsg.pickupDate = additionalFields.pickupDate || null;
+          latestMsg.deliveryDate = additionalFields.deliveryDate || null;
+          latestMsg.trailerType = additionalFields.trailerType || null;
+          latestMsg.notes = additionalFields.notes || null;
+          latestMsg.imageAttachment = additionalFields.imageAttachment || null;
+        }
       }
-      if (additionalFields) {
-        latestMsg.pickupDate = additionalFields.pickupDate || null;
-        latestMsg.deliveryDate = additionalFields.deliveryDate || null;
-        latestMsg.trailerType = additionalFields.trailerType || null;
-        latestMsg.notes = additionalFields.notes || null;
-        latestMsg.imageAttachment = additionalFields.imageAttachment || null;
-      }
-    }
-    return result;
-  };
-})();
+      return result;
+    };
+  })();
 
 
 
@@ -1002,6 +1269,18 @@ function confirmAcceptBid(bidId) {
       
       addNotification(shipment.shipperId, `Shipment #${shipment.id.substring(5)} awarded to carrier for $${bid.amount}`, 'bid_accepted', shipment.id);
       addNotification(bid.carrierId, `Your bid of $${bid.amount} on shipment #${shipment.id.substring(5)} was accepted!`, 'bid_accepted', shipment.id);
+      
+      // Trigger Bid Accepted Email
+      (function() {
+        const rawStore = JSON.parse(localStorage.getItem('movana_store_data'));
+        const carrierUser = rawStore.users.find(u => u.id === bid.carrierId);
+        if (carrierUser && carrierUser.email) {
+          const emailTemplate = EmailTemplates.bidAccepted(carrierUser.username, shipment.cargoType, bid.amount.toLocaleString());
+          sendEmail(carrierUser.email, emailTemplate.subject, emailTemplate.html, emailTemplate.text, "bidAccepted").catch(err => {
+            console.error("Failed to send bid accepted email:", err);
+          });
+        }
+      })();
       
       saveBidHistoryLog(shipment.id, {
         carrierId: bid.carrierId,
@@ -3891,6 +4170,18 @@ function renderCarrierDashboard() {
                 addNotification(jobObj.shipperId, `Shipment #${jobId.replace('ship_', '')} has been picked up by carrier`, 'shipment_picked_up', jobId);
               } else if (targetStatus === 'delivered') {
                 addNotification(jobObj.shipperId, `Shipment #${jobId.replace('ship_', '')} has been delivered by carrier`, 'shipment_delivered', jobId);
+                
+                // Trigger Shipment Delivered Email
+                (function() {
+                  const rawStore = JSON.parse(localStorage.getItem('movana_store_data'));
+                  const shipper = rawStore.users.find(u => u.id === jobObj.shipperId);
+                  if (shipper && shipper.email) {
+                    const emailTemplate = EmailTemplates.shipmentDelivered(shipper.username, jobObj.cargoType);
+                    sendEmail(shipper.email, emailTemplate.subject, emailTemplate.html, emailTemplate.text, "shipmentDelivered").catch(err => {
+                      console.error("Failed to send shipment delivered email:", err);
+                    });
+                  }
+                })();
               } else if (targetStatus === 'in transit') {
                 addNotification(jobObj.shipperId, `Shipment #${jobId.replace('ship_', '')} is now in transit`, 'shipment_in_transit', jobId);
               }
@@ -6796,14 +7087,28 @@ function showOTPVerification(username) {
   if (!card) return;
 
   let email = 'your email';
+  let otp = '';
   try {
     const rawData = JSON.parse(localStorage.getItem('movana_store_data'));
     const u = rawData.users.find(x => x.username.toLowerCase() === username.toLowerCase());
-    if (u) email = u.email;
+    if (u) {
+      email = u.email;
+      otp = u.verificationOtp;
+    }
   } catch (e) {}
+
+  // Trigger registration/unverified-login OTP email immediately on show
+  if (email && otp) {
+    const template = EmailTemplates.emailVerificationOtp(username, otp);
+    sendEmail(email, template.subject, template.html, template.text, "emailVerificationOtp").catch(e => {
+      console.error("Failed to send verification email:", e);
+    });
+  }
 
   let countdown = 60;
   let timerInterval;
+  let resendAttempts = 0;
+  const maxResendAttempts = 5;
 
   const startTimer = () => {
     const timerEl = document.getElementById('otp-timer');
@@ -6878,9 +7183,36 @@ function showOTPVerification(username) {
   });
 
   document.getElementById('otp-resend-btn').addEventListener('click', () => {
+    if (resendAttempts >= maxResendAttempts) {
+      const otpErr = document.getElementById('otp-error');
+      if (otpErr) {
+        otpErr.textContent = "Maximum resend attempts reached. Please try registering again.";
+        otpErr.classList.remove('d-none');
+      }
+      return;
+    }
+    
+    resendAttempts++;
+
     try {
       Store.resendVerificationOtp(username);
-      showToast("Simulated verification email sent! Check browser console.");
+      
+      // Get newly regenerated code
+      let newOtp = '';
+      try {
+        const rawData = JSON.parse(localStorage.getItem('movana_store_data'));
+        const u = rawData.users.find(x => x.username.toLowerCase() === username.toLowerCase());
+        if (u) newOtp = u.verificationOtp;
+      } catch (e) {}
+
+      if (email && newOtp) {
+        const template = EmailTemplates.emailVerificationOtp(username, newOtp);
+        sendEmail(email, template.subject, template.html, template.text, "emailVerificationOtpResend").catch(e => {
+          console.error("Failed to send verification email:", e);
+        });
+      }
+
+      showToast("Verification email sent!");
       startTimer();
       const otpErr = document.getElementById('otp-error');
       if (otpErr) otpErr.classList.add('d-none');
@@ -6917,11 +7249,20 @@ function showOTPVerification(username) {
         const verifiedUser = Store.verifyUserEmail(username, otp);
         clearInterval(timerInterval);
 
+        // Send Welcome & Account Activated emails
+        (function() {
+          const welcome = EmailTemplates.welcomeEmail(verifiedUser.username);
+          sendEmail(verifiedUser.email, welcome.subject, welcome.html, welcome.text, "welcomeEmail").catch(e => console.error(e));
+          
+          const activated = EmailTemplates.accountActivated(verifiedUser.username);
+          sendEmail(verifiedUser.email, activated.subject, activated.html, activated.text, "accountActivated").catch(e => console.error(e));
+        })();
+
         card.innerHTML = `
           <div id="auth-success-screen" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; animation: fadeIn 0.4s ease-in-out;">
             <div style="width: 64px; height: 64px; border-radius: 50%; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);">✓</div>
-            <h2 style="font-size: 22px; font-weight: 800; color: var(--text-main); margin: 0 0 8px 0;">Welcome to Movana</h2>
-            <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 24px 0; line-height: 1.5;">
+            <h2 style="font-size: 22px; font-weight: 800; color: var(--text-main); margin: 0 0 8px 0; text-align: center;">Welcome to Movana</h2>
+            <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 24px 0; line-height: 1.5; text-align: center;">
               Your account has been created and verified successfully.<br>Redirecting to your dashboard...
             </p>
             <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid #22c55e; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
@@ -7085,18 +7426,30 @@ function openCroppingModal(file, onCropComplete) {
   reader.readAsDataURL(file);
 }
 
-function openSensitiveChangeOtpModal(onSuccess) {
+function openSensitiveChangeOtpModal(changeType, onSuccess) {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const user = Store.getCurrentUser();
   if (!user) return;
   
-  console.log("=== [SENSITIVE CHANGE SECURITY VERIFICATION] ===");
-  console.log(`To: ${user.email}`);
-  console.log(`Subject: Verify security action on Movana`);
-  console.log(`Verification Code: ${otp}`);
-  console.log("=================================================");
+  // Trigger sensitive change OTP email
+  (function() {
+    let template;
+    if (changeType === 'email') {
+      template = EmailTemplates.emailChangeOtp(user.username, otp);
+    } else if (changeType === 'phone') {
+      template = EmailTemplates.phoneChangeOtp(user.username, otp);
+    } else if (changeType === 'password') {
+      template = EmailTemplates.passwordResetOtp(user.username, otp);
+    } else {
+      template = { subject: "Verify security action on Movana", html: `<p>Your verification code is: ${otp}</p>`, text: `Your code is: ${otp}` };
+    }
+    
+    sendEmail(user.email, template.subject, template.html, template.text, `${changeType}ChangeOtp`).catch(err => {
+      console.error("Failed to send sensitive change verification email:", err);
+    });
+  })();
   
-  showToast("Security code sent! Check browser console.");
+  showToast("Security code sent!");
   
   const modal = document.createElement('div');
   modal.style.cssText = `
@@ -7148,7 +7501,7 @@ function openSensitiveChangeOtpModal(onSuccess) {
       onSuccess();
     } else {
       if (errorEl) {
-        errorEl.textContent = "Invalid confirmation code. Please check console.";
+        errorEl.textContent = "Invalid confirmation code. Please check email/console.";
         errorEl.classList.remove('d-none');
       }
     }
@@ -7186,6 +7539,9 @@ function createProfileViewDom() {
       </button>
       <button class="settings-tab-btn" data-tab="activity-logs" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; border: none; background: none; border-radius: var(--radius-md); font-weight: 600; text-align: left; cursor: pointer; color: var(--text-muted); transition: var(--transition-smooth);">
         <span style="font-size: 18px;">📋</span> Activity Logs
+      </button>
+      <button class="settings-tab-btn" data-tab="email-logs" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; border: none; background: none; border-radius: var(--radius-md); font-weight: 600; text-align: left; cursor: pointer; color: var(--text-muted); transition: var(--transition-smooth);">
+        <span style="font-size: 18px;">✉️</span> Email Logs
       </button>
     </div>
     
@@ -7414,6 +7770,13 @@ function renderProfileSettingsTab(tabName) {
         try {
           if (emailChanged) {
             Store.updateUserSensitiveField(user.id, 'email', newEmail);
+            // Send confirmation email to the NEW email address
+            (function() {
+              const activated = EmailTemplates.accountActivated(user.username);
+              sendEmail(newEmail, "Email Address Updated Successfully", activated.html, activated.text, "emailChangedConfirmation").catch(err => {
+                console.error("Failed to send confirmation email to new address:", err);
+              });
+            })();
           }
           if (phoneChanged) {
             Store.updateUserSensitiveField(user.id, 'phone', newPhone);
@@ -7437,7 +7800,8 @@ function renderProfileSettingsTab(tabName) {
       };
       
       if (emailChanged || phoneChanged) {
-        openSensitiveChangeOtpModal(performSave);
+        const changeType = emailChanged ? 'email' : 'phone';
+        openSensitiveChangeOtpModal(changeType, performSave);
       } else {
         performSave();
       }
@@ -7597,7 +7961,7 @@ function renderProfileSettingsTab(tabName) {
         return;
       }
       
-      openSensitiveChangeOtpModal(() => {
+      openSensitiveChangeOtpModal('password', () => {
         Store.updateUserSensitiveField(user.id, 'password', newP);
         showToast("Password updated successfully!");
         renderProfileViewContent();
@@ -7794,6 +8158,76 @@ function renderProfileSettingsTab(tabName) {
         </table>
       </div>
     `;
+  } else if (tabName === 'email-logs') {
+    let logs = [];
+    try {
+      logs = JSON.parse(localStorage.getItem('movana_email_logs') || '[]');
+    } catch (e) {}
+    
+    // Sort descending by timestamp
+    logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    let tableRows = '';
+    if (logs.length === 0) {
+      tableRows = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;">No email delivery logs found.</td></tr>`;
+    } else {
+      tableRows = logs.map(l => {
+        const isDelivered = l.status === 'delivered';
+        const statusBadge = isDelivered 
+          ? `<span class="role-badge" style="background:#dcfce7; color:#16a34a; border:1px solid #bbf7d0; font-weight:bold;">Delivered</span>`
+          : `<span class="role-badge" style="background:#fee2e2; color:#ef4444; border:1px solid #fca5a5; font-weight:bold;">Failed</span>`;
+          
+        const detailText = isDelivered ? (l.response || 'Success') : (l.error || 'Unknown error');
+        
+        return `
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 14px 10px; font-size: 13px; color: var(--text-muted); font-family: monospace; white-space: nowrap;">${new Date(l.timestamp).toLocaleString()}</td>
+            <td style="padding: 14px 10px; font-size: 13px; color: var(--text-main); font-weight: 600;">${l.recipient}</td>
+            <td style="padding: 14px 10px; font-size: 13px; color: var(--text-main); font-weight: 500;">
+              <span class="role-badge" style="background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1;">${l.template}</span>
+            </td>
+            <td style="padding: 14px 10px; font-size: 13px;">${statusBadge}</td>
+            <td style="padding: 14px 10px; font-size: 11px; color: var(--text-muted); font-family: monospace; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${detailText.replace(/"/g, '&quot;')}">${detailText}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    contentArea.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h2 style="font-size: 20px; font-weight: 800; color: var(--text-main); margin: 0 0 4px 0;">Email Delivery Logs</h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Audit trail of transactional and notification emails dispatched to users.</p>
+          </div>
+          <button id="clear-email-logs-btn" class="btn btn-sm btn-outline" style="border-color: #ef4444; color: #ef4444; height: 32px;">Clear Logs</button>
+        </div>
+        
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 600px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-weight: 800; font-size: 12px; text-transform: uppercase;">
+                <th style="padding: 10px;">Timestamp</th>
+                <th style="padding: 10px;">Recipient</th>
+                <th style="padding: 10px;">Template</th>
+                <th style="padding: 10px;">Status</th>
+                <th style="padding: 10px;">Details / Response</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    
+    document.getElementById('clear-email-logs-btn').addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear all email delivery logs?')) {
+        localStorage.removeItem('movana_email_logs');
+        renderProfileSettingsTab('email-logs');
+      }
+    });
   }
 }
 
@@ -8167,6 +8601,14 @@ function initApp() {
       
       showToast('Shipment listing published successfully!');
       
+      // Trigger Shipment Posted Email
+      (function() {
+        const emailTemplate = EmailTemplates.shipmentPosted(user.username, createdShipment.cargoType, createdShipment.origin, createdShipment.destination);
+        sendEmail(user.email, emailTemplate.subject, emailTemplate.html, emailTemplate.text, "shipmentPosted").catch(err => {
+          console.error("Failed to send shipment posted email:", err);
+        });
+      })();
+      
       // Reset Form fields
       originInput.value = '';
       originInput.dataset.selected = 'false';
@@ -8295,6 +8737,18 @@ function initApp() {
       const shipment = Store.getShipment(shipmentId);
       if (shipment) {
         addNotification(shipment.shipperId, `New bid of $${parseFloat(bidData.amount).toLocaleString()} received on shipment #${shipmentId.replace('ship_', '')}`, 'new_bid', shipmentId);
+        
+        // Trigger New Bid Received Email
+        (function() {
+          const rawStore = JSON.parse(localStorage.getItem('movana_store_data'));
+          const shipper = rawStore.users.find(u => u.id === shipment.shipperId);
+          if (shipper && shipper.email) {
+            const emailTemplate = EmailTemplates.newBidReceived(shipper.username, shipment.cargoType, carrier.companyName, parseFloat(bidData.amount).toLocaleString());
+            sendEmail(shipper.email, emailTemplate.subject, emailTemplate.html, emailTemplate.text, "newBidReceived").catch(err => {
+              console.error("Failed to send new bid email:", err);
+            });
+          }
+        })();
       }
       
       elements.bidModal.classList.remove('active');
