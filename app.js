@@ -205,27 +205,7 @@
       }
     };
 
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-
-    if (isLocal) {
-      console.log(`\n===== DEVELOPMENT EMAIL (Simulated) =====`);
-      console.log(`Recipient: ${to}`);
-      console.log(`Subject: ${subject}`);
-      console.log(`Template: ${templateName}`);
-      if (html.includes("class=\"otp-box\"") || html.includes("class='otp-box'") || html.includes("otp-box")) {
-        const otpMatch = html.match(/otp-box">(\d{6})<\/div>/) || html.match(/>(\d{6})<\/div>/);
-        const otp = otpMatch ? otpMatch[1] : 'UNKNOWN';
-        console.log(`===== DEVELOPMENT OTP: ${otp} =====`);
-      } else {
-        console.log(`Plain Text Fallback:\n${text}`);
-      }
-      console.log(`=========================================\n`);
-
-      emailLog.status = 'delivered';
-      emailLog.response = 'Simulated Delivery (Local Development)';
-      logEmailInStore(emailLog);
-      return true;
-    }
+    console.log(`Sending email to ${to} via SMTP API...`);
 
     try {
       const res = await fetch('/api/send-email', {
