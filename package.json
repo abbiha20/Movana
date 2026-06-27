@@ -1,0 +1,9 @@
+{
+  "name": "movana",
+  "version": "1.0.0",
+  "description": "Movana Transportation Marketplace",
+  "main": "server.js",
+  "dependencies": {
+    "nodemailer": "^6.9.13"
+  }
+}

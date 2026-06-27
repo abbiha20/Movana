@@ -1,47 +1,22 @@
 const nodemailer = require('nodemailer');
 
 module.exports = async (req, res) => {
-  // Enforce CORS Headers
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  // Parse body safely
-  let payload = {};
-  if (typeof req.body === 'object') {
-    payload = req.body;
-  } else {
-    try {
-      payload = JSON.parse(req.body);
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid JSON request body' });
-    }
-  }
-
-  const { to, subject, html, text } = payload;
-  if (!to || !subject || !html) {
-    return res.status(400).json({ error: 'Missing required parameters: to, subject, html' });
+    return res.status(200).end();
   }
 
   // Check missing environment variables
   const requiredVars = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_FROM_NAME'];
   const missing = requiredVars.filter(v => !process.env[v]);
-
+  
   const diagnostics = {
-    recipient: to,
+    missingEnvironmentVariables: missing,
     smtpHost: process.env.SMTP_HOST || 'not configured',
     smtpPort: process.env.SMTP_PORT || 'not configured',
     smtpUser: process.env.SMTP_USER || 'not configured',
@@ -50,13 +25,14 @@ module.exports = async (req, res) => {
 
   if (missing.length > 0) {
     return res.status(400).json({
-      error: 'Missing required SMTP environment variables.',
-      diagnostics: { ...diagnostics, missingEnvironmentVariables: missing }
+      status: 'failed',
+      message: 'Missing required SMTP environment variables.',
+      diagnostics
     });
   }
 
   try {
-    diagnostics.stage = 'transporter-creation';
+    diagnostics.stage = 'connection';
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT, 10),
@@ -67,28 +43,39 @@ module.exports = async (req, res) => {
       },
       tls: {
         rejectUnauthorized: false
-      }
+      },
+      connectionTimeout: 5000 // 5 seconds timeout for health check
     });
 
-    diagnostics.stage = 'sending';
+    diagnostics.stage = 'verify';
+    // Verify connection configuration
+    await transporter.verify();
+
+    diagnostics.stage = 'test-send';
+    // Send a test email to the user itself
     const info = await transporter.sendMail({
       from: `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM}>`,
-      to,
-      subject,
-      text: text || '',
-      html
+      to: process.env.SMTP_USER,
+      subject: 'Movana SMTP Health Check',
+      text: 'This is an automated SMTP health check email from Movana.',
+      html: '<p>This is an automated SMTP health check email from Movana.</p>'
     });
 
     return res.status(200).json({
-      success: true,
+      status: 'success',
+      message: 'SMTP configuration verified and test email sent successfully.',
       messageId: info.messageId,
-      response: info.response
+      diagnostics: {
+        ...diagnostics,
+        stage: 'complete',
+        response: info.response
+      }
     });
 
   } catch (error) {
-    console.error("SMTP sending failed:", error);
     return res.status(500).json({
-      error: `SMTP delivery failed at stage '${diagnostics.stage}': ${error.message}`,
+      status: 'failed',
+      message: error.message,
       diagnostics: {
         ...diagnostics,
         errorName: error.name,
