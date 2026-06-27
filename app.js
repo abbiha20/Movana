@@ -3064,7 +3064,6 @@ function setupRegistrationUI() {
 
   bindRegistrationLiveValidation();
 }
-}
 
 // --- INTERACTIVE MAP GLOBALS & HELPERS ---
 let detailsMap = null;
@@ -6649,36 +6648,6 @@ function setupNegotiationModalEvents() {
   }
 }
 
-// --- SETUP EVENT LISTENERS ---
-function initApp() {
-  bindAuthFormSubmit();
-  setAuthMode('login');
-
-  // Navigation Logo returns home
-  elements.logo.addEventListener('click', () => {
-    const user = Store.getCurrentUser();
-    if (user) {
-      switchView(user.role);
-    } else {
-      switchView('landing');
-    }
-  });
-  
-  // Landing Actions
-  elements.btnGetStarted.addEventListener('click', () => {
-    setAuthMode('register');
-    switchView('auth');
-  });
-  
-  elements.btnViewMarketplace.addEventListener('click', () => {
-    setAuthMode('login');
-    switchView('auth');
-  });
-  
-  // Auth Tab Toggles
-  elements.tabLogin.addEventListener('click', () => setAuthMode('login'));
-  elements.tabRegister.addEventListener('click', () => setAuthMode('register'));
-  
 function bindAuthFormSubmit() {
   if (!elements.authForm) return;
   
@@ -6939,6 +6908,36 @@ function bindAuthFormSubmit() {
     }
   };
 }
+
+// --- SETUP EVENT LISTENERS ---
+function initApp() {
+  bindAuthFormSubmit();
+  setAuthMode('login');
+
+  // Navigation Logo returns home
+  elements.logo.addEventListener('click', () => {
+    const user = Store.getCurrentUser();
+    if (user) {
+      switchView(user.role);
+    } else {
+      switchView('landing');
+    }
+  });
+  
+  // Landing Actions
+  elements.btnGetStarted.addEventListener('click', () => {
+    setAuthMode('register');
+    switchView('auth');
+  });
+  
+  elements.btnViewMarketplace.addEventListener('click', () => {
+    setAuthMode('login');
+    switchView('auth');
+  });
+  
+  // Auth Tab Toggles
+  elements.tabLogin.addEventListener('click', () => setAuthMode('login'));
+  elements.tabRegister.addEventListener('click', () => setAuthMode('register'));
   
   // Shipper Form Submission
   elements.postShipmentForm.addEventListener('submit', async (e) => {
