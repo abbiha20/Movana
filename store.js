@@ -326,7 +326,69 @@ const defaultSeedData = {
 };
 
 // Internal data state
+// Internal data state
 let data = defaultSeedData;
+
+// Cryptographic hash helper (SHA-256 in pure JS)
+function sha256(ascii) {
+  function rightRotate(value, amount) {
+    return (value>>>amount) | (value<<(32-amount));
+  }
+  var mathPow = Math.pow;
+  var maxWord = mathPow(2, 32);
+  var lengthProperty = 'length';
+  var i, j;
+  var result = '';
+  var words = [];
+  var asciiLength = ascii[lengthProperty]*8;
+  var hash = sha256.h = sha256.h || [];
+  var k = sha256.k = sha256.k || [];
+  var primeCounter = k[lengthProperty];
+  var isComposite = {};
+  for (var candidate = 2; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (i = 0; i < 313; i += candidate) {
+        isComposite[i] = i;
+      }
+      hash[primeCounter] = (mathPow(candidate, .5)*maxWord)|0;
+      k[primeCounter++] = (mathPow(candidate, 1/3)*maxWord)|0;
+    }
+  }
+  ascii += '\x80';
+  while (ascii[lengthProperty]%64 - 56) ascii += '\x00';
+  for (i = 0; i < ascii[lengthProperty]; i++) {
+    j = ascii.charCodeAt(i);
+    if (j >> 8) return;
+    words[i>>2] |= j << (24 - (i % 4)*8);
+  }
+  words[words[lengthProperty]] = ((asciiLength/maxWord)|0);
+  words[words[lengthProperty]] = (asciiLength);
+  for (j = 0; j < words[lengthProperty];) {
+    var w = words.slice(j, j += 16);
+    var oldHash = hash.slice(0);
+    hash = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    for (i = 0; i < 64; i++) {
+      var w16 = w[i - 16], w15 = w[i - 15], w7 = w[i - 7], w2 = w[i - 2];
+      var s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3);
+      var s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10);
+      var ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6]);
+      var maj = (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2]);
+      var temp1 = hash[7] + (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) + ch + k[i] + (w[i] = (i < 16 ? w[i] : (w16 + s0 + w7 + s1) | 0));
+      var temp2 = (rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) + maj;
+      hash = [(temp1 + temp2)|0].concat(hash);
+      hash[4] = (hash[4] + temp1)|0;
+    }
+    for (i = 0; i < 8; i++) {
+      hash[i] = (hash[i] + oldHash[i])|0;
+    }
+  }
+  for (i = 0; i < 8; i++) {
+    var val = hash[i];
+    if (val < 0) val += 0x100000000;
+    result += val.toString(16).padStart(8, '0');
+  }
+  return result;
+}
 
 // Load data from localStorage
 const load = () => {
@@ -344,7 +406,45 @@ const load = () => {
         data.violations = [];
         migrated = true;
       }
+      if (!data.activityLogs) {
+        data.activityLogs = [];
+        migrated = true;
+      }
+      if (!data.ratings) {
+        data.ratings = [];
+        migrated = true;
+      }
       
+      // Auto-migrate seed users
+      if (data.users) {
+        data.users.forEach(u => {
+          if (!u.password.match(/^[0-9a-f]{64}$/i)) {
+            u.password = sha256(u.password);
+            migrated = true;
+          }
+          if (u.emailVerified === undefined) {
+            u.emailVerified = true;
+            migrated = true;
+          }
+          if (!u.createdAt) {
+            u.createdAt = new Date('2026-06-01T08:00:00Z').toISOString();
+            migrated = true;
+          }
+          if (!u.lastLogin) {
+            u.lastLogin = new Date().toISOString();
+            migrated = true;
+          }
+          if (!u.address) {
+            u.address = u.role === 'shipper' ? '123 Shipper Way' : '456 Carrier Blvd';
+            u.city = 'Atlanta';
+            u.state = 'GA';
+            u.zip = '30303';
+            u.country = 'United States';
+            migrated = true;
+          }
+        });
+      }
+
       // Migrate: If seed shipments do not have coverImage, priority, distance, or are outdated, update them
       data.shipments.forEach(s => {
         if (s.status === 'assigned') {
@@ -435,6 +535,20 @@ const load = () => {
     }
   } else {
     data = defaultSeedData;
+    // Hash default users
+    data.users.forEach(u => {
+      u.password = sha256(u.password);
+      u.emailVerified = true;
+      u.createdAt = new Date('2026-06-01T08:00:00Z').toISOString();
+      u.lastLogin = new Date().toISOString();
+      u.address = u.role === 'shipper' ? '123 Shipper Way' : '456 Carrier Blvd';
+      u.city = 'Atlanta';
+      u.state = 'GA';
+      u.zip = '30303';
+      u.country = 'United States';
+    });
+    data.activityLogs = [];
+    data.ratings = [];
     save();
   }
 };
@@ -455,37 +569,263 @@ const Store = {
     return data.users.map(u => maskUser(u, currentUser));
   },
   
-  registerUser: (username, password, role, companyName) => {
+  registerUser: (username, password, role, companyName, additionalData = {}) => {
     load();
-    const existing = data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (existing) {
+    const existingUsername = data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (existingUsername) {
       throw new Error('Username already exists. Please choose another.');
     }
+    const email = additionalData.email || `${username}@movanamarketplace.com`;
+    const existingEmail = data.users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+    if (existingEmail) {
+      throw new Error('Email address is already in use by another account.');
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // secure 6-digit OTP
+    const otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+
     const newUser = {
       id: `u_${generateId()}`,
       username,
-      password,
+      password: sha256(password), // Hashed securely
       role,
       companyName: companyName || `${username}'s Freight`,
-      contactName: username.charAt(0).toUpperCase() + username.slice(1),
-      phone: '1-800-555-0100',
-      email: `${username}@movanamarketplace.com`
+      contactName: additionalData.contactName || (username.charAt(0).toUpperCase() + username.slice(1)),
+      phone: additionalData.phone || '1-800-555-0100',
+      email: email,
+      emailVerified: false, // Inactive until verified
+      verificationOtp: otp,
+      verificationExpires: otpExpires,
+      address: '',
+      city: '',
+      state: '',
+      zip: '',
+      country: 'United States',
+      createdAt: new Date().toISOString(),
+      lastLogin: ''
     };
+
+    if (role === 'carrier') {
+      newUser.mcNumber = additionalData.mcNumber || '';
+      newUser.dotNumber = additionalData.dotNumber || '';
+      newUser.equipmentTypes = additionalData.equipmentTypes || [];
+      newUser.companyLogo = '';
+    }
+
     data.users.push(newUser);
-    data.currentUser = newUser;
     save();
+
+    // Log simulated email verification
+    console.log("=== [SIMULATED EMAIL DELIVERY] ===");
+    console.log(`To: ${email}`);
+    console.log(`Subject: Verify your Movana Account`);
+    console.log(`Verification Code: ${otp}`);
+    console.log("====================================");
+
     return newUser;
   },
 
   loginUser: (username, password) => {
     load();
-    const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
+    const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
     if (!user) {
       throw new Error('Invalid username or password.');
     }
+
+    // Verify hashed password
+    const hashed = sha256(password);
+    if (user.password !== hashed) {
+      throw new Error('Invalid username or password.');
+    }
+
+    // Check if verified
+    if (user.emailVerified === false) {
+      // Regenerate OTP and send
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      user.verificationOtp = otp;
+      user.verificationExpires = Date.now() + 5 * 60 * 1000;
+      save();
+
+      console.log("=== [SIMULATED EMAIL DELIVERY (LOGIN UNVERIFIED)] ===");
+      console.log(`To: ${user.email}`);
+      console.log(`Subject: Verify your Movana Account`);
+      console.log(`Verification Code: ${otp}`);
+      console.log("======================================================");
+
+      throw new Error('UNVERIFIED_EMAIL:' + user.username);
+    }
+
+    user.lastLogin = new Date().toISOString();
     data.currentUser = user;
     save();
-    return user;
+    return maskUser(user, user);
+  },
+
+  verifyUserEmail: (username, otp) => {
+    load();
+    const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (!user) {
+      throw new Error('User not found.');
+    }
+    if (user.verificationOtp !== otp) {
+      throw new Error('Invalid OTP. Please check the code.');
+    }
+    if (Date.now() > user.verificationExpires) {
+      throw new Error('OTP has expired. Please click Resend.');
+    }
+
+    user.emailVerified = true;
+    user.verificationOtp = '';
+    user.verificationExpires = 0;
+    user.lastLogin = new Date().toISOString();
+    
+    // Automatically log in
+    data.currentUser = user;
+    
+    save();
+    
+    // Log audit
+    Store.addActivityLog(user.id, 'email_verified', 'Account email verified successfully during registration.');
+    
+    return maskUser(user, user);
+  },
+
+  resendVerificationOtp: (username) => {
+    load();
+    const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (!user) {
+      throw new Error('User not found.');
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.verificationOtp = otp;
+    user.verificationExpires = Date.now() + 5 * 60 * 1000;
+    save();
+
+    console.log("=== [SIMULATED EMAIL DELIVERY (RESEND)] ===");
+    console.log(`To: ${user.email}`);
+    console.log(`Subject: Verify your Movana Account`);
+    console.log(`Verification Code: ${otp}`);
+    console.log("===========================================");
+
+    return true;
+  },
+
+  updateUserProfile: (userId, profileData) => {
+    load();
+    const user = data.users.find(u => u.id === userId);
+    if (!user) {
+      throw new Error('User not found.');
+    }
+
+    const changes = [];
+    const logChange = (field, oldVal, newVal) => {
+      if (oldVal !== newVal) {
+        changes.push(`${field}: "${oldVal || ''}" -> "${newVal || ''}"`);
+      }
+    };
+
+    logChange('Contact Name', user.contactName, profileData.contactName);
+    logChange('Company Name', user.companyName, profileData.companyName);
+    logChange('Address', user.address, profileData.address);
+    logChange('City', user.city, profileData.city);
+    logChange('State', user.state, profileData.state);
+    logChange('Zip', user.zip, profileData.zip);
+    logChange('Country', user.country, profileData.country);
+
+    if (user.role === 'carrier') {
+      logChange('MC Number', user.mcNumber, profileData.mcNumber);
+      logChange('DOT Number', user.dotNumber, profileData.dotNumber);
+      const oldEquip = (user.equipmentTypes || []).sort().join(',');
+      const newEquip = (profileData.equipmentTypes || []).sort().join(',');
+      if (oldEquip !== newEquip) {
+        changes.push(`Equipment Types: [${oldEquip}] -> [${newEquip}]`);
+      }
+      user.mcNumber = profileData.mcNumber || '';
+      user.dotNumber = profileData.dotNumber || '';
+      user.equipmentTypes = profileData.equipmentTypes || [];
+      if (profileData.companyLogo !== undefined) {
+        user.companyLogo = profileData.companyLogo;
+      }
+    }
+
+    user.contactName = profileData.contactName || '';
+    user.companyName = profileData.companyName || '';
+    user.address = profileData.address || '';
+    user.city = profileData.city || '';
+    user.state = profileData.state || '';
+    user.zip = profileData.zip || '';
+    user.country = profileData.country || 'United States';
+    if (profileData.profilePic !== undefined) {
+      user.profilePic = profileData.profilePic;
+    }
+
+    if (data.currentUser.id === user.id) {
+      data.currentUser = user;
+    }
+    save();
+
+    if (changes.length > 0) {
+      Store.addActivityLog(user.id, 'profile_update', `Updated profile fields: ${changes.join(', ')}`);
+    }
+
+    return maskUser(user, user);
+  },
+
+  updateUserSensitiveField: (userId, field, value) => {
+    load();
+    const user = data.users.find(u => u.id === userId);
+    if (!user) {
+      throw new Error('User not found.');
+    }
+
+    let details = '';
+    if (field === 'email') {
+      const duplicate = data.users.find(u => u.id !== userId && u.email && u.email.toLowerCase() === value.toLowerCase());
+      if (duplicate) {
+        throw new Error('Email address is already in use by another account.');
+      }
+      details = `Email: "${user.email}" -> "${value}"`;
+      user.email = value;
+    } else if (field === 'phone') {
+      details = `Phone: "${user.phone}" -> "${value}"`;
+      user.phone = value;
+    } else if (field === 'password') {
+      details = `Password changed securely`;
+      user.password = sha256(value);
+    }
+
+    if (data.currentUser.id === user.id) {
+      data.currentUser = user;
+    }
+    save();
+
+    Store.addActivityLog(user.id, 'security_update', details);
+    return maskUser(user, user);
+  },
+
+  addActivityLog: (userId, action, details) => {
+    load();
+    if (!data.activityLogs) data.activityLogs = [];
+    
+    const log = {
+      id: `log_${generateId()}`,
+      userId,
+      action,
+      details,
+      timestamp: new Date().toISOString()
+    };
+    data.activityLogs.push(log);
+    save();
+    return log;
+  },
+
+  getActivityLogs: (userId) => {
+    load();
+    if (!data.activityLogs) return [];
+    return data.activityLogs
+      .filter(log => log.userId === userId)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   },
 
   getCurrentUser: () => {

@@ -160,110 +160,7 @@ function logShipmentEvent(shipmentId, eventType, label, desc, additional = {}) {
   };
 })();
 
-// Monkey-patch Store.registerUser to save custom fields and handle proper registration storage
-(function() {
-  Store.registerUser = function(username, password, role, companyName, additionalData = {}) {
-    console.log("=== DEBUG: Store.registerUser CALLED ===");
-    console.log("Username:", username);
-    console.log("Role:", role);
-    console.log("Additional Data:", JSON.stringify(additionalData, null, 2));
 
-    const rawDataStr = localStorage.getItem('movana_store_data');
-    let rawData = {
-      users: [],
-      shipments: [],
-      bids: [],
-      negotiations: [],
-      violations: [],
-      currentUser: null
-    };
-
-    if (rawDataStr) {
-      try {
-        rawData = JSON.parse(rawDataStr);
-      } catch (e) {
-        console.error("Failed to parse raw data from localstorage", e);
-      }
-    }
-
-    if (!rawData.users) rawData.users = [];
-
-    // Check unique username (case-insensitive)
-    const existing = rawData.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (existing) {
-      console.warn(`Registration failed: Username '${username}' already exists.`);
-      throw new Error('Username already exists. Please choose another.');
-    }
-
-    const newUser = {
-      id: `u_${Math.random().toString(36).substr(2, 9)}`,
-      username: username,
-      password: password, // case-sensitive password is saved exactly
-      role: role,
-      contactName: additionalData.contactName || username,
-      companyName: companyName || `${username}'s Freight`,
-      email: additionalData.email || `${username}@movanamarketplace.com`,
-      phone: additionalData.phone || '1-800-555-0100',
-      createdAt: new Date().toISOString(),
-      dateCreated: new Date().toISOString()
-    };
-
-    if (role === 'carrier') {
-      newUser.mcNumber = additionalData.mcNumber || '';
-      newUser.dotNumber = additionalData.dotNumber || '';
-      newUser.equipmentTypes = additionalData.equipmentTypes || [];
-    }
-
-    console.log("User object before save:", JSON.stringify(newUser, null, 2));
-
-    // Save
-    rawData.users.push(newUser);
-    rawData.currentUser = newUser;
-    localStorage.setItem('movana_store_data', JSON.stringify(rawData));
-
-    // Update the in-memory Store state
-    Store.setCurrentUser(newUser);
-
-    console.log("User object after save: successfully saved to local storage.");
-    console.log("==========================================");
-
-    return newUser;
-  };
-})();
-
-// Monkey-patch Store.loginUser to add detailed console logs and verify authentication
-(function() {
-  const originalLoginUser = Store.loginUser;
-  Store.loginUser = function(username, password) {
-    console.log("=== DEBUG: Store.loginUser CALLED ===");
-    console.log("Username entered:", username);
-    console.log("Password length entered:", password ? password.length : 0);
-
-    try {
-      const result = originalLoginUser.call(this, username, password);
-      console.log("Login successful! User object returned:", JSON.stringify(result, null, 2));
-      console.log("==========================================");
-      return result;
-    } catch (e) {
-      console.error("Login failed with error:", e.message);
-      console.log("==========================================");
-      throw e;
-    }
-  };
-})();
-
-// Monkey-patch Store.logout to add detailed console logs
-(function() {
-  const originalLogout = Store.logout;
-  Store.logout = function() {
-    console.log("=== DEBUG: Store.logout CALLED ===");
-    const currentUser = Store.getCurrentUser();
-    console.log("Logging out user:", currentUser ? currentUser.username : "none");
-    originalLogout.call(this);
-    console.log("Logout successful! Current user is now null.");
-    console.log("==========================================");
-  };
-})();
 
 // --- NOTIFICATIONS MANAGEMENT SYSTEM ---
 function getNotificationsForUser(userId) {
@@ -1670,16 +1567,43 @@ function loadColumnPreferences() {
 
 // --- ROUTER / VIEW CONTROLLER ---
 function switchView(viewName, updateHistory = true) {
-  if (viewName === 'inbox') {
-    const user = Store.getCurrentUser();
+  const user = Store.getCurrentUser();
+  
+  // Strict RBAC Enforcement
+  const shipperOnlyViews = ['shipper'];
+  const carrierOnlyViews = ['carrier', 'loadboard'];
+  const authRequiredViews = ['shipper', 'carrier', 'loadboard', 'inbox', 'profile'];
+  
+  if (authRequiredViews.includes(viewName)) {
     if (!user) {
+      console.log(`Access Denied: Redirecting unauthenticated user trying to visit ${viewName} to login.`);
       switchView('auth', updateHistory);
       return;
     }
+    
+    if (shipperOnlyViews.includes(viewName) && user.role !== 'shipper') {
+      showToast("Access Denied: Restricted to Shipper accounts.", true);
+      switchView(user.role, updateHistory);
+      return;
+    }
+    if (carrierOnlyViews.includes(viewName) && user.role !== 'carrier') {
+      showToast("Access Denied: Restricted to Carrier accounts.", true);
+      switchView(user.role, updateHistory);
+      return;
+    }
+  }
+
+  if (viewName === 'auth' && user) {
+    switchView(user.role, updateHistory);
+    return;
+  }
+
+  if (viewName === 'inbox') {
     document.body.style.overflow = 'hidden';
   } else {
     document.body.style.overflow = '';
   }
+
   // Hide all views
   elements.landingView.classList.add('d-none');
   elements.authView.classList.add('d-none');
@@ -1687,6 +1611,9 @@ function switchView(viewName, updateHistory = true) {
   elements.carrierView.classList.add('d-none');
   elements.loadboardView.classList.add('d-none');
   if (elements.inboxView) elements.inboxView.classList.add('d-none');
+  
+  const profileView = document.getElementById('profile-view');
+  if (profileView) profileView.classList.add('d-none');
   
   currentView = viewName;
   
@@ -1719,6 +1646,12 @@ function switchView(viewName, updateHistory = true) {
     if (elements.inboxView) elements.inboxView.classList.remove('d-none');
     renderInboxPage();
     if (updateHistory) safePushState('inbox', '/inbox');
+  } else if (viewName === 'profile') {
+    createProfileViewDom();
+    const pView = document.getElementById('profile-view');
+    if (pView) pView.classList.remove('d-none');
+    renderProfileViewContent();
+    if (updateHistory) safePushState('profile', '/profile');
   }
   
   renderHeader();
@@ -1759,6 +1692,8 @@ function handleUrlRouting() {
     switchView('carrier', false);
   } else if (path === '/inbox' || hash === '#/inbox' || hash === '#inbox') {
     switchView('inbox', false);
+  } else if (path === '/profile' || hash === '#/profile' || hash === '#profile') {
+    switchView('profile', false);
   } else {
     // Default fallback based on authentication
     const user = Store.getCurrentUser();
@@ -2454,7 +2389,6 @@ function updateLightboxImage() {
   }
 }
 
-// --- HEADER CONTROLLER ---
 function renderHeader() {
   const user = Store.getCurrentUser();
   elements.navLinks.innerHTML = '';
@@ -2487,17 +2421,18 @@ function renderHeader() {
     const userRoleText = user.role === 'shipper' ? 'Shipper' : 'Carrier';
     const badgeClass = user.role === 'shipper' ? 'shipper-role' : 'carrier-role';
     
-    // Calculate unread notification count
-    // Calculate unread notification count
     const notifs = getNotificationsForUser(user.id);
     const unreadCount = notifs.filter(n => !n.read).length;
     const badgeHtml = unreadCount > 0 ? `<span class="notif-badge" style="position: absolute; top: -6px; right: -6px; background: red; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white;">${unreadCount}</span>` : '';
     
+    const loadboardLinkHtml = user.role === 'carrier' ? `<a href="#" class="nav-link" id="nav-btn-loadboard" style="margin-right: 16px; font-weight: 600; text-decoration: none; color: var(--text-muted); transition: var(--transition-smooth);">Load Board</a>` : '';
+    
     elements.navLinks.innerHTML = `
       <div class="user-profile-widget">
-        <a href="#" class="nav-link" id="nav-btn-loadboard" style="margin-right: 16px; font-weight: 600; text-decoration: none; color: var(--text-muted); transition: var(--transition-smooth);">Load Board</a>
+        ${loadboardLinkHtml}
         <a href="#" class="nav-link" id="nav-btn-dashboard" style="margin-right: 16px; font-weight: 600; text-decoration: none; color: var(--text-muted); transition: var(--transition-smooth);">Dashboard</a>
         <a href="#" class="nav-link" id="nav-btn-inbox" style="margin-right: 16px; font-weight: 600; text-decoration: none; color: var(--text-muted); transition: var(--transition-smooth); position: relative;">Inbox</a>
+        <a href="#" class="nav-link" id="nav-btn-profile" style="margin-right: 16px; font-weight: 600; text-decoration: none; color: var(--text-muted); transition: var(--transition-smooth);">Profile & Settings</a>
         
         <!-- Notification Bell -->
         <div id="nav-notif-container" style="position: relative; margin-right: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
@@ -2506,29 +2441,18 @@ function renderHeader() {
         </div>
         
         <span class="role-badge ${badgeClass}">${userRoleText}</span>
-        <span class="company-name">${user.companyName}</span>
+        <span class="company-name" style="margin-right: 16px;">${user.companyName}</span>
         
-        <!-- Dev Quick Switcher Selection -->
-        <select class="quick-switcher" id="nav-quick-switcher" title="Quick Switch User Role">
-          <option value="" disabled selected>Switch User...</option>
-          <optgroup label="Shippers">
-            <option value="u_shipper1" ${user.id === 'u_shipper1' ? 'selected' : ''}>Atlas Freight</option>
-            <option value="u_shipper2" ${user.id === 'u_shipper2' ? 'selected' : ''}>Greenwood Produce</option>
-          </optgroup>
-          <optgroup label="Carriers">
-            <option value="u_carrier1" ${user.id === 'u_carrier1' ? 'selected' : ''}>Titan Trucking</option>
-            <option value="u_carrier2" ${user.id === 'u_carrier2' ? 'selected' : ''}>SwiftFlow Trans</option>
-          </optgroup>
-        </select>
-
         <button class="btn btn-outline btn-sm" id="nav-btn-logout">Logout</button>
       </div>
     `;
     
-    document.getElementById('nav-btn-loadboard').addEventListener('click', (e) => {
-      e.preventDefault();
-      switchView('loadboard');
-    });
+    if (user.role === 'carrier') {
+      document.getElementById('nav-btn-loadboard').addEventListener('click', (e) => {
+        e.preventDefault();
+        switchView('loadboard');
+      });
+    }
 
     document.getElementById('nav-btn-dashboard').addEventListener('click', (e) => {
       e.preventDefault();
@@ -2540,27 +2464,18 @@ function renderHeader() {
       switchView('inbox');
     });
 
-    // Bind click listener for notification bell icon
+    document.getElementById('nav-btn-profile').addEventListener('click', (e) => {
+      e.preventDefault();
+      switchView('profile');
+    });
+
     const navNotifContainer = document.getElementById('nav-notif-container');
     if (navNotifContainer) {
       navNotifContainer.addEventListener('click', toggleNotifOverlayPanel);
     }
     
-    // Set up unread inbox messages badge
     updateInboxBadge();
 
-    // Quick switcher event handler
-    document.getElementById('nav-quick-switcher').addEventListener('change', (e) => {
-      const selectedUserId = e.target.value;
-      const targetUser = Store.getUsers().find(u => u.id === selectedUserId);
-      if (targetUser) {
-        Store.setCurrentUser(targetUser);
-        showToast(`Switched persona to: ${targetUser.companyName}`);
-        switchView(targetUser.role);
-      }
-    });
-
-    // Logout handler
     document.getElementById('nav-btn-logout').addEventListener('click', () => {
       Store.logout();
       showToast('Logged out successfully.');
@@ -2568,14 +2483,15 @@ function renderHeader() {
     });
   }
 
-  // Highlight active header link style
+  // Highlight active link
   const activeLink = document.getElementById(
     currentView === 'loadboard' ? 'nav-btn-loadboard' : 
     (currentView === 'shipper' || currentView === 'carrier' ? 'nav-btn-dashboard' : 
-    (currentView === 'inbox' ? 'nav-btn-inbox' : ''))
+    (currentView === 'inbox' ? 'nav-btn-inbox' : 
+    (currentView === 'profile' ? 'nav-btn-profile' : '')))
   );
   if (activeLink) {
-    activeLink.style.color = 'var(--accent-shipper)';
+    activeLink.style.color = (user && user.role === 'carrier') ? 'var(--color-carrier, #2563eb)' : 'var(--color-shipper, #0f172a)';
   }
 }
 
@@ -6844,57 +6760,23 @@ function bindAuthFormSubmit() {
         elements.authSubmitBtn.innerHTML = '<span class="loading-spinner" style="display: inline-block; width: 14px; height: 14px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></span> Creating Account...';
 
         user = Store.registerUser(username, password, role, companyName, additionalData);
-        console.log("Registration successful! Registered user object:", JSON.stringify(user, null, 2));
-
-        // Display premium success screen inside the card
-        const card = document.querySelector('.auth-card');
-        if (card) {
-          card.innerHTML = `
-            <div id="auth-success-screen" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; animation: fadeIn 0.4s ease-in-out;">
-              <div style="width: 64px; height: 64px; border-radius: 50%; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);">✓</div>
-              <h2 style="font-size: 22px; font-weight: 800; color: var(--text-main); margin: 0 0 8px 0;">Welcome to Movana</h2>
-              <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 24px 0; line-height: 1.5;">
-                Your account has been created successfully.<br>Redirecting to your dashboard...
-              </p>
-              <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid #22c55e; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-            </div>
-          `;
-        }
+        console.log("Registration successful! Initializing OTP verification...", JSON.stringify(user, null, 2));
 
         setTimeout(() => {
-          showToast(`Welcome to Movana, ${user.companyName}!`);
-          switchView(user.role);
-          // Restore the auth card structure
-          setTimeout(() => {
-            if (card) {
-              card.innerHTML = `
-                <div style="text-align: center; margin-bottom: 20px;">
-                  <img src="logo.svg" alt="Movana Logo" style="width: 80px; height: auto;">
-                </div>
-                <div class="auth-tab">
-                  <button class="tab-btn active" id="tab-login">Login</button>
-                  <button class="tab-btn" id="tab-register">Register</button>
-                </div>
-                <h2 id="auth-title">Welcome Back</h2>
-                <p id="auth-subtitle">Sign in to manage your shipments and bids.</p>
-                <form id="auth-form"></form>
-              `;
-              elements.tabLogin = document.getElementById('tab-login');
-              elements.tabRegister = document.getElementById('tab-register');
-              elements.authTitle = document.getElementById('auth-title');
-              elements.authSubtitle = document.getElementById('auth-subtitle');
-              elements.authForm = document.getElementById('auth-form');
-              
-              elements.tabLogin.addEventListener('click', () => setAuthMode('login'));
-              elements.tabRegister.addEventListener('click', () => setAuthMode('register'));
-              bindAuthFormSubmit();
-              setAuthMode('login');
-            }
-          }, 500);
-        }, 2000);
+          showToast("Registration successful! Verification code sent.");
+          showOTPVerification(user.username);
+        }, 1000);
       }
     } catch (err) {
       console.error(`Authentication error [${mode.toUpperCase()}]:`, err.message);
+      
+      if (err.message.startsWith('UNVERIFIED_EMAIL:')) {
+        const unverifiedUsername = err.message.split(':')[1];
+        showToast("Email verification required. Check console for OTP.", true);
+        showOTPVerification(unverifiedUsername);
+        return;
+      }
+
       const errBox = document.getElementById('auth-error') || elements.authError;
       if (errBox) {
         errBox.innerHTML = err.message;
@@ -6907,6 +6789,1012 @@ function bindAuthFormSubmit() {
       }
     }
   };
+}
+
+function showOTPVerification(username) {
+  const card = document.querySelector('.auth-card');
+  if (!card) return;
+
+  let email = 'your email';
+  try {
+    const rawData = JSON.parse(localStorage.getItem('movana_store_data'));
+    const u = rawData.users.find(x => x.username.toLowerCase() === username.toLowerCase());
+    if (u) email = u.email;
+  } catch (e) {}
+
+  let countdown = 60;
+  let timerInterval;
+
+  const startTimer = () => {
+    const timerEl = document.getElementById('otp-timer');
+    const resendBtn = document.getElementById('otp-resend-btn');
+    if (!timerEl || !resendBtn) return;
+
+    resendBtn.disabled = true;
+    resendBtn.style.opacity = '0.5';
+    resendBtn.style.cursor = 'not-allowed';
+
+    countdown = 60;
+    timerEl.textContent = `Resend code in ${countdown}s`;
+
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      countdown--;
+      if (countdown <= 0) {
+        clearInterval(timerInterval);
+        timerEl.textContent = '';
+        resendBtn.disabled = false;
+        resendBtn.style.opacity = '1';
+        resendBtn.style.cursor = 'pointer';
+      } else {
+        timerEl.textContent = `Resend code in ${countdown}s`;
+      }
+    }, 1000);
+  };
+
+  card.innerHTML = `
+    <div style="text-align: center; margin-bottom: 20px;">
+      <img src="logo.svg" alt="Movana Logo" style="width: 80px; height: auto;">
+    </div>
+    <h2 style="font-size: 22px; font-weight: 800; color: var(--text-main); margin: 0 0 8px 0; text-align: center;">Verify Your Email</h2>
+    <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 24px 0; line-height: 1.5; text-align: center;">
+      A 6-digit verification code has been sent to <strong>${email}</strong>.<br>Enter the code below to activate your account.
+    </p>
+    
+    <div id="otp-error" class="alert alert-danger d-none" style="margin-bottom: 20px; padding: 12px; font-size: 13px; border-radius: var(--radius-sm);"></div>
+    
+    <form id="otp-form" style="display: flex; flex-direction: column; gap: 20px;">
+      <div class="form-group" style="text-align: center;">
+        <input type="text" id="otp-input" maxlength="6" placeholder="000000" style="width: 100%; max-width: 200px; height: 50px; font-size: 24px; font-weight: 800; text-align: center; letter-spacing: 6px; border: 2px solid var(--border-color); border-radius: var(--radius-md); outline: none; transition: var(--transition-smooth); margin: 0 auto; display: block;" required autocomplete="one-time-code">
+      </div>
+      
+      <button type="submit" id="otp-submit-btn" class="btn btn-primary" style="width: 100%; height: 45px; font-weight: 600;">Verify & Activate</button>
+    </form>
+    
+    <div style="margin-top: 24px; text-align: center; font-size: 13px; color: var(--text-muted);">
+      Didn't receive the code? <button id="otp-resend-btn" style="background: none; border: none; color: var(--accent-shipper, #0f172a); font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline;">Resend Code</button>
+      <div id="otp-timer" style="margin-top: 8px; font-size: 12px; color: var(--text-muted);"></div>
+    </div>
+    
+    <div style="margin-top: 20px; text-align: center;">
+      <a href="#" id="otp-back-btn" style="font-size: 13px; color: var(--text-muted); text-decoration: none; font-weight: 600;">← Back to Sign In</a>
+    </div>
+  `;
+
+  const otpInput = document.getElementById('otp-input');
+  if (otpInput) {
+    otpInput.focus();
+    otpInput.addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/\D/g, '');
+    });
+  }
+
+  startTimer();
+
+  document.getElementById('otp-back-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    clearInterval(timerInterval);
+    restoreAuthCardStructure();
+  });
+
+  document.getElementById('otp-resend-btn').addEventListener('click', () => {
+    try {
+      Store.resendVerificationOtp(username);
+      showToast("Simulated verification email sent! Check browser console.");
+      startTimer();
+      const otpErr = document.getElementById('otp-error');
+      if (otpErr) otpErr.classList.add('d-none');
+    } catch (err) {
+      const otpErr = document.getElementById('otp-error');
+      if (otpErr) {
+        otpErr.innerHTML = err.message;
+        otpErr.classList.remove('d-none');
+      }
+    }
+  });
+
+  document.getElementById('otp-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const otp = otpInput.value.trim();
+    const otpErr = document.getElementById('otp-error');
+    const submitBtn = document.getElementById('otp-submit-btn');
+
+    if (otp.length !== 6) {
+      if (otpErr) {
+        otpErr.textContent = "Please enter the full 6-digit verification code.";
+        otpErr.classList.remove('d-none');
+      }
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="loading-spinner" style="display: inline-block; width: 14px; height: 14px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></span> Verifying...';
+
+    if (otpErr) otpErr.classList.add('d-none');
+
+    setTimeout(() => {
+      try {
+        const verifiedUser = Store.verifyUserEmail(username, otp);
+        clearInterval(timerInterval);
+
+        card.innerHTML = `
+          <div id="auth-success-screen" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; animation: fadeIn 0.4s ease-in-out;">
+            <div style="width: 64px; height: 64px; border-radius: 50%; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);">✓</div>
+            <h2 style="font-size: 22px; font-weight: 800; color: var(--text-main); margin: 0 0 8px 0;">Welcome to Movana</h2>
+            <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 24px 0; line-height: 1.5;">
+              Your account has been created and verified successfully.<br>Redirecting to your dashboard...
+            </p>
+            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid #22c55e; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+          </div>
+        `;
+
+        setTimeout(() => {
+          showToast(`Welcome to Movana, ${verifiedUser.companyName}!`);
+          switchView(verifiedUser.role);
+          setTimeout(() => {
+            restoreAuthCardStructure();
+          }, 500);
+        }, 2000);
+
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Verify & Activate";
+        if (otpErr) {
+          otpErr.innerHTML = err.message;
+          otpErr.classList.remove('d-none');
+        }
+      }
+    }, 1000);
+  });
+}
+
+function restoreAuthCardStructure() {
+  const card = document.querySelector('.auth-card');
+  if (card) {
+    card.innerHTML = `
+      <div style="text-align: center; margin-bottom: 20px;">
+        <img src="logo.svg" alt="Movana Logo" style="width: 80px; height: auto;">
+      </div>
+      <div class="auth-tab">
+        <button class="tab-btn active" id="tab-login">Login</button>
+        <button class="tab-btn" id="tab-register">Register</button>
+      </div>
+      <h2 id="auth-title">Welcome Back</h2>
+      <p id="auth-subtitle">Sign in to manage your shipments and bids.</p>
+      <form id="auth-form"></form>
+    `;
+    elements.tabLogin = document.getElementById('tab-login');
+    elements.tabRegister = document.getElementById('tab-register');
+    elements.authTitle = document.getElementById('auth-title');
+    elements.authSubtitle = document.getElementById('auth-subtitle');
+    elements.authForm = document.getElementById('auth-form');
+    
+    elements.tabLogin.addEventListener('click', () => setAuthMode('login'));
+    elements.tabRegister.addEventListener('click', () => setAuthMode('register'));
+    bindAuthFormSubmit();
+    setAuthMode('login');
+  }
+}
+
+function openCroppingModal(file, onCropComplete) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const cropModal = document.createElement('div');
+      cropModal.style.cssText = `
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.6);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999;
+        backdrop-filter: blur(4px);
+      `;
+      
+      cropModal.innerHTML = `
+        <div style="background: white; padding: 25px; border-radius: var(--radius-lg); width: 340px; box-shadow: var(--shadow-xl); display: flex; flex-direction: column; gap: 15px; align-items: center;">
+          <h4 style="font-size: 16px; font-weight: 800; color: var(--text-main); margin: 0;">Adjust & Crop Avatar</h4>
+          
+          <div style="width: 180px; height: 180px; border-radius: 50%; border: 2px dashed var(--border-color); overflow: hidden; position: relative; background: #f8fafc; display: flex; align-items: center; justify-content: center;">
+            <canvas id="crop-canvas" width="150" height="150" style="border-radius: 50%; width: 150px; height: 150px; cursor: move;"></canvas>
+          </div>
+          
+          <div style="width: 100%;">
+            <label style="font-size: 12px; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 5px;">Zoom</label>
+            <input type="range" id="crop-zoom" min="0.5" max="3" step="0.05" value="1" style="width: 100%;">
+          </div>
+          
+          <div style="display: flex; gap: 10px; width: 100%; margin-top: 10px;">
+            <button id="crop-cancel-btn" class="btn btn-outline" style="flex: 1; height: 38px;">Cancel</button>
+            <button id="crop-save-btn" class="btn btn-primary" style="flex: 1; height: 38px;">Crop & Save</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(cropModal);
+      
+      const canvas = document.getElementById('crop-canvas');
+      const ctx = canvas.getContext('2d');
+      const zoomInput = document.getElementById('crop-zoom');
+      
+      let scale = 1;
+      let offsetX = 0;
+      let offsetY = 0;
+      let isDragging = false;
+      let startX, startY;
+      
+      const draw = () => {
+        ctx.clearRect(0, 0, 150, 150);
+        ctx.save();
+        
+        ctx.beginPath();
+        ctx.arc(75, 75, 75, 0, Math.PI * 2);
+        ctx.clip();
+        
+        const w = img.width * scale;
+        const h = img.height * scale;
+        const x = 75 - w/2 + offsetX;
+        const y = 75 - h/2 + offsetY;
+        
+        ctx.drawImage(img, x, y, w, h);
+        ctx.restore();
+      };
+      
+      const minScale = Math.max(150 / img.width, 150 / img.height);
+      zoomInput.min = minScale;
+      zoomInput.max = minScale * 4;
+      scale = minScale;
+      zoomInput.value = scale;
+      
+      draw();
+      
+      zoomInput.addEventListener('input', () => {
+        scale = parseFloat(zoomInput.value);
+        draw();
+      });
+      
+      canvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX - offsetX;
+        startY = e.clientY - offsetY;
+      });
+      
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        offsetX = e.clientX - startX;
+        offsetY = e.clientY - startY;
+        draw();
+      });
+      
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+      
+      document.getElementById('crop-cancel-btn').addEventListener('click', () => {
+        cropModal.remove();
+      });
+      
+      document.getElementById('crop-save-btn').addEventListener('click', () => {
+        const croppedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+        onCropComplete(croppedBase64);
+        cropModal.remove();
+      });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function openSensitiveChangeOtpModal(onSuccess) {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const user = Store.getCurrentUser();
+  if (!user) return;
+  
+  console.log("=== [SENSITIVE CHANGE SECURITY VERIFICATION] ===");
+  console.log(`To: ${user.email}`);
+  console.log(`Subject: Verify security action on Movana`);
+  console.log(`Verification Code: ${otp}`);
+  console.log("=================================================");
+  
+  showToast("Security code sent! Check browser console.");
+  
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+  `;
+  
+  modal.innerHTML = `
+    <div style="background: white; padding: 30px; border-radius: var(--radius-lg); width: 380px; box-shadow: var(--shadow-xl); display: flex; flex-direction: column; gap: 15px;">
+      <h3 style="font-size: 18px; font-weight: 800; color: var(--text-main); margin: 0; text-align: center;">Confirm Security Verification</h3>
+      <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; text-align: center; margin: 0;">
+        To apply these sensitive account changes, please enter the 6-digit confirmation code sent to your email (<strong>${user.email}</strong>).
+      </p>
+      
+      <div id="modal-otp-error" class="alert alert-danger d-none" style="font-size: 12px; padding: 10px; margin: 0; border-radius: var(--radius-sm);"></div>
+      
+      <div style="text-align: center; margin: 10px 0;">
+        <input type="text" id="modal-otp-input" maxlength="6" placeholder="000000" style="width: 160px; height: 45px; font-size: 22px; font-weight: 800; text-align: center; letter-spacing: 4px; border: 2px solid var(--border-color); border-radius: var(--radius-md); outline: none;" required>
+      </div>
+      
+      <div style="display: flex; gap: 12px; margin-top: 10px;">
+        <button id="modal-otp-cancel" class="btn btn-outline" style="flex: 1; height: 40px;">Cancel</button>
+        <button id="modal-otp-confirm" class="btn btn-primary" style="flex: 1; height: 40px;">Confirm</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  const otpInput = document.getElementById('modal-otp-input');
+  otpInput.focus();
+  otpInput.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '');
+  });
+  
+  document.getElementById('modal-otp-cancel').addEventListener('click', () => {
+    modal.remove();
+  });
+  
+  document.getElementById('modal-otp-confirm').addEventListener('click', () => {
+    const entered = otpInput.value.trim();
+    const errorEl = document.getElementById('modal-otp-error');
+    if (entered === otp) {
+      modal.remove();
+      onSuccess();
+    } else {
+      if (errorEl) {
+        errorEl.textContent = "Invalid confirmation code. Please check console.";
+        errorEl.classList.remove('d-none');
+      }
+    }
+  });
+}
+
+function createProfileViewDom() {
+  const mainContent = document.getElementById('main-content');
+  if (!mainContent) return;
+  if (document.getElementById('profile-view')) return;
+  
+  const profileSec = document.createElement('section');
+  profileSec.id = 'profile-view';
+  profileSec.className = 'dashboard-layout d-none';
+  profileSec.style.cssText = `
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 30px;
+    max-width: 1200px;
+    margin: 30px auto;
+    padding: 0 20px;
+  `;
+  
+  profileSec.innerHTML = `
+    <div class="profile-settings-sidebar" style="background: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 8px; height: fit-content;">
+      <h3 style="font-size: 15px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); margin: 0 0 12px 0; letter-spacing: 0.5px;">Account Settings</h3>
+      <button class="settings-tab-btn active" data-tab="profile-info" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; border: none; background: none; border-radius: var(--radius-md); font-weight: 600; text-align: left; cursor: pointer; color: var(--accent-shipper); transition: var(--transition-smooth);">
+        <span style="font-size: 18px;">👤</span> Profile Information
+      </button>
+      <button class="settings-tab-btn" data-tab="security-settings" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; border: none; background: none; border-radius: var(--radius-md); font-weight: 600; text-align: left; cursor: pointer; color: var(--text-muted); transition: var(--transition-smooth);">
+        <span style="font-size: 18px;">🔒</span> Security & Verification
+      </button>
+      <button class="settings-tab-btn" id="settings-carrier-tab" data-tab="carrier-specs" style="display: none; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; border: none; background: none; border-radius: var(--radius-md); font-weight: 600; text-align: left; cursor: pointer; color: var(--text-muted); transition: var(--transition-smooth);">
+        <span style="font-size: 18px;">🚛</span> Carrier Credentials
+      </button>
+      <button class="settings-tab-btn" data-tab="activity-logs" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; border: none; background: none; border-radius: var(--radius-md); font-weight: 600; text-align: left; cursor: pointer; color: var(--text-muted); transition: var(--transition-smooth);">
+        <span style="font-size: 18px;">📋</span> Activity Logs
+      </button>
+    </div>
+    
+    <div id="profile-settings-content" style="background: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 30px; box-shadow: var(--shadow-sm); min-height: 500px;">
+    </div>
+  `;
+  
+  mainContent.appendChild(profileSec);
+  
+  const tabs = profileSec.querySelectorAll('.settings-tab-btn');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => {
+        t.classList.remove('active');
+        t.style.color = 'var(--text-muted)';
+        t.style.background = 'none';
+      });
+      tab.classList.add('active');
+      const roleAccent = Store.getCurrentUser().role === 'carrier' ? 'var(--color-carrier, #2563eb)' : 'var(--color-shipper, #0f172a)';
+      tab.style.color = roleAccent;
+      tab.style.background = '#f8fafc';
+      
+      const tabName = tab.getAttribute('data-tab');
+      renderProfileSettingsTab(tabName);
+    });
+  });
+}
+
+let currentSettingsTab = 'profile-info';
+
+function renderProfileViewContent() {
+  const user = Store.getCurrentUser();
+  if (!user) return;
+  
+  const carrierTab = document.getElementById('settings-carrier-tab');
+  if (carrierTab) {
+    if (user.role === 'carrier') {
+      carrierTab.style.display = 'flex';
+    } else {
+      carrierTab.style.display = 'none';
+      if (currentSettingsTab === 'carrier-specs') {
+        currentSettingsTab = 'profile-info';
+      }
+    }
+  }
+  
+  const tabs = document.querySelectorAll('.settings-tab-btn');
+  tabs.forEach(tab => {
+    const tabName = tab.getAttribute('data-tab');
+    if (tabName === currentSettingsTab) {
+      tab.classList.add('active');
+      const roleAccent = user.role === 'carrier' ? 'var(--color-carrier, #2563eb)' : 'var(--color-shipper, #0f172a)';
+      tab.style.color = roleAccent;
+      tab.style.background = '#f8fafc';
+    } else {
+      tab.classList.remove('active');
+      tab.style.color = 'var(--text-muted)';
+      tab.style.background = 'none';
+    }
+  });
+  
+  renderProfileSettingsTab(currentSettingsTab);
+}
+
+function renderProfileSettingsTab(tabName) {
+  const contentArea = document.getElementById('profile-settings-content');
+  if (!contentArea) return;
+  
+  const user = Store.getCurrentUser();
+  if (!user) return;
+  
+  const roleAccent = user.role === 'carrier' ? 'var(--color-carrier, #2563eb)' : 'var(--color-shipper, #0f172a)';
+  currentSettingsTab = tabName;
+  
+  if (tabName === 'profile-info') {
+    const avatarSrc = user.profilePic || `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f1f5f9"/><text x="50" y="55" font-size="28" font-family="Outfit, sans-serif" font-weight="700" fill="#94a3b8" text-anchor="middle">' + (user.contactName || user.username).substring(0,2).toUpperCase() + '</text></svg>')}`;
+    
+    contentArea.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <div>
+          <h2 style="font-size: 20px; font-weight: 800; color: var(--text-main); margin: 0 0 4px 0;">Profile Information</h2>
+          <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Update your account's public profile information and contact details.</p>
+        </div>
+        
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 15px;">
+          <div style="flex: 1; min-width: 140px;">
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 2px;">Account ID</div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-main); font-family: monospace;">${user.id}</div>
+          </div>
+          <div style="flex: 1; min-width: 140px;">
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 2px;">Username</div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-main); font-family: monospace;">${user.username}</div>
+          </div>
+          <div style="flex: 1; min-width: 140px;">
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 2px;">Role</div>
+            <div style="font-size: 13px; font-weight: 700; color: ${roleAccent};">${user.role === 'carrier' ? 'Carrier' : 'Shipper'}</div>
+          </div>
+          <div style="flex: 1; min-width: 140px;">
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 2px;">Registered</div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">${new Date(user.createdAt || Date.now()).toLocaleDateString()}</div>
+          </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 24px;">
+          <div style="position: relative; width: 85px; height: 85px; border-radius: 50%; overflow: hidden; background: #e2e8f0; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm); border: 2px solid white; outline: 1px solid var(--border-color);">
+            <img id="settings-avatar-img" src="${avatarSrc}" style="width: 100%; height: 100%; object-fit: cover;">
+          </div>
+          <div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--text-main); margin-bottom: 4px;">Profile Picture</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Upload a square photo to update your avatar.</div>
+            <div style="display: flex; gap: 8px;">
+              <button id="upload-avatar-trigger" class="btn btn-outline btn-sm">Upload Photo</button>
+              <button id="remove-avatar-btn" class="btn btn-sm btn-outline" style="border-color: #ef4444; color: #ef4444;">Remove</button>
+              <input type="file" id="settings-avatar-input" accept="image/*" style="display: none;">
+            </div>
+          </div>
+        </div>
+        
+        <form id="settings-profile-form" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <div class="form-group">
+            <label class="label">Contact Name <span style="color: red;">*</span></label>
+            <input type="text" id="settings-contact-name" class="input" value="${user.contactName || ''}" required>
+          </div>
+          <div class="form-group">
+            <label class="label">Company Name <span style="color: red;">*</span></label>
+            <input type="text" id="settings-company-name" class="input" value="${user.companyName || ''}" required>
+          </div>
+          
+          <div class="form-group">
+            <label class="label">Email Address <span style="color: red;">*</span> <span style="font-size:11px; color:#22c55e; font-weight:700; margin-left:5px;">✓ Verified</span></label>
+            <input type="email" id="settings-email" class="input" value="${user.email || ''}" required>
+          </div>
+          <div class="form-group">
+            <label class="label">Phone Number <span style="color: red;">*</span></label>
+            <input type="tel" id="settings-phone" class="input" value="${user.phone || ''}" required>
+          </div>
+          
+          <div class="form-group" style="grid-column: span 2;">
+            <label class="label">Street Address</label>
+            <input type="text" id="settings-address" class="input" value="${user.address || ''}">
+          </div>
+          
+          <div class="form-group">
+            <label class="label">City</label>
+            <input type="text" id="settings-city" class="input" value="${user.city || ''}">
+          </div>
+          <div class="form-group">
+            <label class="label">State</label>
+            <input type="text" id="settings-state" class="input" value="${user.state || ''}">
+          </div>
+          
+          <div class="form-group">
+            <label class="label">ZIP / Postal Code</label>
+            <input type="text" id="settings-zip" class="input" value="${user.zip || ''}">
+          </div>
+          <div class="form-group">
+            <label class="label">Country</label>
+            <input type="text" id="settings-country" class="input" value="${user.country || 'United States'}">
+          </div>
+          
+          <div style="grid-column: span 2; display: flex; justify-content: flex-end; margin-top: 10px;">
+            <button type="submit" class="btn btn-primary" style="height: 42px; padding: 0 24px; font-weight: 600; background: ${roleAccent}; border-color: ${roleAccent};">Save Profile Changes</button>
+          </div>
+        </form>
+      </div>
+    `;
+    
+    document.getElementById('upload-avatar-trigger').addEventListener('click', () => {
+      document.getElementById('settings-avatar-input').click();
+    });
+    
+    document.getElementById('settings-avatar-input').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        openCroppingModal(e.target.files[0], (croppedBase64) => {
+          user.profilePic = croppedBase64;
+          document.getElementById('settings-avatar-img').src = croppedBase64;
+          Store.updateUserProfile(user.id, {
+            contactName: user.contactName,
+            companyName: user.companyName,
+            address: user.address,
+            city: user.city,
+            state: user.state,
+            zip: user.zip,
+            country: user.country,
+            profilePic: croppedBase64
+          });
+          showToast("Profile picture updated successfully.");
+        });
+      }
+    });
+    
+    document.getElementById('remove-avatar-btn').addEventListener('click', () => {
+      user.profilePic = '';
+      const defaultSrc = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f1f5f9"/><text x="50" y="55" font-size="28" font-family="Outfit, sans-serif" font-weight="700" fill="#94a3b8" text-anchor="middle">' + (user.contactName || user.username).substring(0,2).toUpperCase() + '</text></svg>')}`;
+      document.getElementById('settings-avatar-img').src = defaultSrc;
+      Store.updateUserProfile(user.id, {
+        contactName: user.contactName,
+        companyName: user.companyName,
+        address: user.address,
+        city: user.city,
+        state: user.state,
+        zip: user.zip,
+        country: user.country,
+        profilePic: ''
+      });
+      showToast("Profile picture removed.");
+    });
+    
+    document.getElementById('settings-profile-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const newContactName = document.getElementById('settings-contact-name').value.trim();
+      const newCompanyName = document.getElementById('settings-company-name').value.trim();
+      const newEmail = document.getElementById('settings-email').value.trim();
+      const newPhone = document.getElementById('settings-phone').value.trim();
+      const newAddress = document.getElementById('settings-address').value.trim();
+      const newCity = document.getElementById('settings-city').value.trim();
+      const newState = document.getElementById('settings-state').value.trim();
+      const newZip = document.getElementById('settings-zip').value.trim();
+      const newCountry = document.getElementById('settings-country').value.trim();
+      
+      const emailChanged = newEmail !== user.email;
+      const phoneChanged = newPhone !== user.phone;
+      
+      const performSave = () => {
+        try {
+          if (emailChanged) {
+            Store.updateUserSensitiveField(user.id, 'email', newEmail);
+          }
+          if (phoneChanged) {
+            Store.updateUserSensitiveField(user.id, 'phone', newPhone);
+          }
+          
+          Store.updateUserProfile(user.id, {
+            contactName: newContactName,
+            companyName: newCompanyName,
+            address: newAddress,
+            city: newCity,
+            state: newState,
+            zip: newZip,
+            country: newCountry
+          });
+          
+          showToast("Profile updated successfully!");
+          renderProfileViewContent();
+        } catch (err) {
+          alert("Error saving profile: " + err.message);
+        }
+      };
+      
+      if (emailChanged || phoneChanged) {
+        openSensitiveChangeOtpModal(performSave);
+      } else {
+        performSave();
+      }
+    });
+  } else if (tabName === 'security-settings') {
+    contentArea.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 30px;">
+        <div>
+          <h2 style="font-size: 20px; font-weight: 800; color: var(--text-main); margin: 0 0 4px 0;">Security & Verification</h2>
+          <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Change your account password and review verification checklist status.</p>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 24px;">
+          <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 15px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">Email Verification</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Required to log in and receive actions.</div>
+            </div>
+            <span class="role-badge shipper-role" style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; font-weight:bold;">✓ Email Verified</span>
+          </div>
+          <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 15px; display: flex; align-items: center; justify-content: space-between; opacity: 0.75;">
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">Phone Verification</div>
+              <div style="font-size: 11px; color: var(--text-muted);">For SMS dispatch text alerts.</div>
+            </div>
+            <span class="role-badge" style="background:#f1f5f9; color:#64748b; border: 1px solid #cbd5e1; font-weight:bold;">Coming Soon</span>
+          </div>
+          <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 15px; display: flex; align-items: center; justify-content: space-between; opacity: 0.75;">
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">Carrier Audit License</div>
+              <div style="font-size: 11px; color: var(--text-muted);">FMCSA authority validation check.</div>
+            </div>
+            <span class="role-badge" style="background:#f1f5f9; color:#64748b; border: 1px solid #cbd5e1; font-weight:bold;">Coming Soon</span>
+          </div>
+          <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 15px; display: flex; align-items: center; justify-content: space-between; opacity: 0.75;">
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">Identity Verification</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Stripe Identity verification.</div>
+            </div>
+            <span class="role-badge" style="background:#f1f5f9; color:#64748b; border: 1px solid #cbd5e1; font-weight:bold;">Coming Soon</span>
+          </div>
+        </div>
+        
+        <div>
+          <h3 style="font-size: 16px; font-weight: 800; color: var(--text-main); margin: 0 0 16px 0;">Change Account Password</h3>
+          <div id="change-pass-error" class="alert alert-danger d-none" style="margin-bottom: 20px; font-size:13px; padding:12px;"></div>
+          
+          <form id="settings-password-form" style="display: flex; flex-direction: column; gap: 20px; max-width: 500px;">
+            <div class="form-group" style="position: relative;">
+              <label class="label">Current Password</label>
+              <input type="password" id="settings-curr-pass" class="input" style="padding-right: 40px;" required>
+              <button type="button" class="eye-toggle-btn" data-input-id="settings-curr-pass" style="position: absolute; right: 12px; top: 38px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--text-muted); opacity: 0.75; padding: 0;">👁️</button>
+            </div>
+            
+            <div class="form-group" style="position: relative;">
+              <label class="label">New Password</label>
+              <input type="password" id="settings-new-pass" class="input" style="padding-right: 40px;" required>
+              <button type="button" class="eye-toggle-btn" data-input-id="settings-new-pass" style="position: absolute; right: 12px; top: 38px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--text-muted); opacity: 0.75; padding: 0;">👁️</button>
+            </div>
+            
+            <div class="password-requirements" style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; gap: 6px;">
+              <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">Password Requirements</div>
+              <div class="req-item" id="req-length-set" style="font-size: 12px; color: var(--color-rejected, #ef4444); display: flex; align-items: center; gap: 6px; font-weight:600;">❌ Min. 8 characters</div>
+              <div class="req-item" id="req-upper-set" style="font-size: 12px; color: var(--color-rejected, #ef4444); display: flex; align-items: center; gap: 6px; font-weight:600;">❌ One uppercase letter</div>
+              <div class="req-item" id="req-lower-set" style="font-size: 12px; color: var(--color-rejected, #ef4444); display: flex; align-items: center; gap: 6px; font-weight:600;">❌ One lowercase letter</div>
+              <div class="req-item" id="req-number-set" style="font-size: 12px; color: var(--color-rejected, #ef4444); display: flex; align-items: center; gap: 6px; font-weight:600;">❌ One number</div>
+              <div class="req-item" id="req-special-set" style="font-size: 12px; color: var(--color-rejected, #ef4444); display: flex; align-items: center; gap: 6px; font-weight:600;">❌ One special character</div>
+            </div>
+            
+            <div class="form-group" style="position: relative;">
+              <label class="label">Confirm New Password</label>
+              <input type="password" id="settings-confirm-pass" class="input" style="padding-right: 40px;" required>
+              <button type="button" class="eye-toggle-btn" data-input-id="settings-confirm-pass" style="position: absolute; right: 12px; top: 38px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--text-muted); opacity: 0.75; padding: 0;">👁️</button>
+            </div>
+            
+            <div>
+              <button type="submit" class="btn btn-primary" style="height: 42px; padding: 0 24px; font-weight: 600; background: ${roleAccent}; border-color: ${roleAccent};">Update Password</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    
+    document.querySelectorAll('.eye-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const inp = document.getElementById(btn.getAttribute('data-input-id'));
+        if (inp) {
+          if (inp.type === 'password') {
+            inp.type = 'text';
+            btn.textContent = '🙈';
+          } else {
+            inp.type = 'password';
+            btn.textContent = '👁️';
+          }
+        }
+      });
+    });
+    
+    const newPassInput = document.getElementById('settings-new-pass');
+    newPassInput.addEventListener('input', () => {
+      const val = newPassInput.value;
+      const rules = {
+        length: val.length >= 8,
+        upper: /[A-Z]/.test(val),
+        lower: /[a-z]/.test(val),
+        number: /[0-9]/.test(val),
+        special: /[!@#$%^&*(),.?":{}|<>]/.test(val)
+      };
+      
+      const updateRuleUI = (id, isValid, text) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.innerHTML = isValid ? `✓ ${text}` : `❌ ${text}`;
+          el.style.color = isValid ? 'var(--color-approved, #22c55e)' : 'var(--color-rejected, #ef4444)';
+        }
+      };
+      
+      updateRuleUI('req-length-set', rules.length, "Min. 8 characters");
+      updateRuleUI('req-upper-set', rules.upper, "One uppercase letter");
+      updateRuleUI('req-lower-set', rules.lower, "One lowercase letter");
+      updateRuleUI('req-number-set', rules.number, "One number");
+      updateRuleUI('req-special-set', rules.special, "One special character");
+    });
+    
+    document.getElementById('settings-password-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const curr = document.getElementById('settings-curr-pass').value;
+      const newP = newPassInput.value;
+      const conf = document.getElementById('settings-confirm-pass').value;
+      const errBox = document.getElementById('change-pass-error');
+      
+      if (errBox) errBox.classList.add('d-none');
+      
+      if (sha256(curr) !== user.password) {
+        if (errBox) {
+          errBox.textContent = "Current password is incorrect.";
+          errBox.classList.remove('d-none');
+        }
+        return;
+      }
+      
+      const isComplex = newP.length >= 8 && /[A-Z]/.test(newP) && /[a-z]/.test(newP) && /[0-9]/.test(newP) && /[!@#$%^&*(),.?":{}|<>]/.test(newP);
+      if (!isComplex) {
+        if (errBox) {
+          errBox.textContent = "New password does not meet complexity requirements.";
+          errBox.classList.remove('d-none');
+        }
+        return;
+      }
+      
+      if (newP !== conf) {
+        if (errBox) {
+          errBox.textContent = "New passwords do not match.";
+          errBox.classList.remove('d-none');
+        }
+        return;
+      }
+      
+      openSensitiveChangeOtpModal(() => {
+        Store.updateUserSensitiveField(user.id, 'password', newP);
+        showToast("Password updated successfully!");
+        renderProfileViewContent();
+      });
+    });
+  } else if (tabName === 'carrier-specs') {
+    const logoSrc = user.companyLogo || `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f1f5f9"/><text x="50" y="55" font-size="28" font-family="Outfit, sans-serif" font-weight="700" fill="#cbd5e1" text-anchor="middle">LOGO</text></svg>')}`;
+    const mc = user.mcNumber || '';
+    const dot = user.dotNumber || '';
+    const selectedTypes = user.equipmentTypes || [];
+    
+    const equipmentOptions = ['Flatbed', 'Dry Van', 'Reefer', 'Step Deck', 'Hot Shot', 'Power Only'];
+    const checklistHtml = equipmentOptions.map(opt => {
+      const isChecked = selectedTypes.includes(opt) ? 'checked' : '';
+      return `
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-main);">
+          <input type="checkbox" class="settings-equip-checkbox" value="${opt}" ${isChecked} style="width: 16px; height: 16px; accent-color: var(--color-carrier, #2563eb);">
+          ${opt}
+        </label>
+      `;
+    }).join('');
+    
+    contentArea.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <div>
+          <h2 style="font-size: 20px; font-weight: 800; color: var(--text-main); margin: 0 0 4px 0;">Carrier Credentials</h2>
+          <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Provide your USDOT authority information and equipment capabilities.</p>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 24px;">
+          <div style="width: 90px; height: 90px; border-radius: var(--radius-md); overflow: hidden; background: #e2e8f0; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm); border: 2px solid white; outline: 1px solid var(--border-color);">
+            <img id="settings-logo-img" src="${logoSrc}" style="width: 100%; height: 100%; object-fit: contain;">
+          </div>
+          <div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--text-main); margin-bottom: 4px;">Company Logo</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Upload your company logo for bids visibility.</div>
+            <div style="display: flex; gap: 8px;">
+              <button id="upload-logo-trigger" class="btn btn-outline btn-sm">Upload Logo</button>
+              <button id="remove-logo-btn" class="btn btn-sm btn-outline" style="border-color: #ef4444; color: #ef4444;">Remove</button>
+              <input type="file" id="settings-logo-input" accept="image/*" style="display: none;">
+            </div>
+          </div>
+        </div>
+        
+        <form id="settings-carrier-form" style="display: flex; flex-direction: column; gap: 20px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="form-group">
+              <label class="label">USDOT Number <span style="color: red;">*</span></label>
+              <input type="text" id="settings-dot" class="input" value="${dot}" required>
+            </div>
+            <div class="form-group">
+              <label class="label">MC Number <span style="color: red;">*</span></label>
+              <input type="text" id="settings-mc" class="input" value="${mc}" required>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label class="label" style="margin-bottom: 10px;">Equipment Specialization <span style="color: red;">*</span></label>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 15px;">
+              ${checklistHtml}
+            </div>
+          </div>
+          
+          <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+            <button type="submit" class="btn btn-primary" style="height: 42px; padding: 0 24px; font-weight: 600; background: var(--color-carrier, #2563eb); border-color: var(--color-carrier, #2563eb);">Save Carrier Credentials</button>
+          </div>
+        </form>
+      </div>
+    `;
+    
+    document.getElementById('upload-logo-trigger').addEventListener('click', () => {
+      document.getElementById('settings-logo-input').click();
+    });
+    
+    document.getElementById('settings-logo-input').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        openCroppingModal(e.target.files[0], (croppedBase64) => {
+          user.companyLogo = croppedBase64;
+          document.getElementById('settings-logo-img').src = croppedBase64;
+          Store.updateUserProfile(user.id, {
+            contactName: user.contactName,
+            companyName: user.companyName,
+            address: user.address,
+            city: user.city,
+            state: user.state,
+            zip: user.zip,
+            country: user.country,
+            mcNumber: user.mcNumber,
+            dotNumber: user.dotNumber,
+            equipmentTypes: user.equipmentTypes,
+            companyLogo: croppedBase64
+          });
+          showToast("Company logo updated successfully.");
+        });
+      }
+    });
+    
+    document.getElementById('remove-logo-btn').addEventListener('click', () => {
+      user.companyLogo = '';
+      const defaultSrc = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f1f5f9"/><text x="50" y="55" font-size="28" font-family="Outfit, sans-serif" font-weight="700" fill="#cbd5e1" text-anchor="middle">LOGO</text></svg>')}`;
+      document.getElementById('settings-logo-img').src = defaultSrc;
+      Store.updateUserProfile(user.id, {
+        contactName: user.contactName,
+        companyName: user.companyName,
+        address: user.address,
+        city: user.city,
+        state: user.state,
+        zip: user.zip,
+        country: user.country,
+        mcNumber: user.mcNumber,
+        dotNumber: user.dotNumber,
+        equipmentTypes: user.equipmentTypes,
+        companyLogo: ''
+      });
+      showToast("Company logo removed.");
+    });
+    
+    document.getElementById('settings-carrier-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const newDot = document.getElementById('settings-dot').value.trim();
+      const newMc = document.getElementById('settings-mc').value.trim();
+      
+      const selected = [];
+      document.querySelectorAll('.settings-equip-checkbox:checked').forEach(cb => {
+        selected.push(cb.value);
+      });
+      
+      if (selected.length === 0) {
+        alert("Please select at least one Equipment Type.");
+        return;
+      }
+      
+      Store.updateUserProfile(user.id, {
+        contactName: user.contactName,
+        companyName: user.companyName,
+        address: user.address,
+        city: user.city,
+        state: user.state,
+        zip: user.zip,
+        country: user.country,
+        mcNumber: newMc,
+        dotNumber: newDot,
+        equipmentTypes: selected
+      });
+      
+      showToast("Carrier credentials updated successfully!");
+      renderProfileViewContent();
+    });
+    
+  } else if (tabName === 'activity-logs') {
+    const logs = Store.getActivityLogs(user.id);
+    let tableRows = '';
+    
+    if (logs.length === 0) {
+      tableRows = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 30px;">No activity logs found for this account.</td></tr>`;
+    } else {
+      tableRows = logs.map(l => {
+        let badgeColor = '#64748b';
+        if (l.action === 'security_update') badgeColor = '#ef4444';
+        else if (l.action === 'email_verified') badgeColor = '#22c55e';
+        else if (l.action === 'profile_update') badgeColor = '#f59e0b';
+        
+        return `
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 14px 10px; font-size: 13px; color: var(--text-muted); font-family: monospace;">${new Date(l.timestamp).toLocaleString()}</td>
+            <td style="padding: 14px 10px; font-size: 12px; font-weight: 700;">
+              <span class="role-badge" style="background: none; border: 1px solid ${badgeColor}; color: ${badgeColor}; padding: 3px 6px;">${l.action.toUpperCase()}</span>
+            </td>
+            <td style="padding: 14px 10px; font-size: 13px; color: var(--text-main); font-weight:500;">${l.details}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    contentArea.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div>
+          <h2 style="font-size: 20px; font-weight: 800; color: var(--text-main); margin: 0 0 4px 0;">Activity Logs</h2>
+          <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Auditable history of all sensitive actions and security revisions made on this account.</p>
+        </div>
+        
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-weight: 800; font-size: 12px; text-transform: uppercase;">
+              <th style="padding: 10px;">Timestamp</th>
+              <th style="padding: 10px;">Action Type</th>
+              <th style="padding: 10px;">Details Summary</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
 }
 
 // --- SETUP EVENT LISTENERS ---
