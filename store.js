@@ -390,6 +390,111 @@ function sha256(ascii) {
   return result;
 }
 
+// Cloud Firestore Integration Helper Functions
+const syncItem = async (col, item) => {
+  if (!window.useFirebase || !window.db || !item) return;
+  const docId = item.id || item.bidId || item.timestamp;
+  if (!docId) return;
+  try {
+    const cleanItem = JSON.parse(JSON.stringify(item));
+    await window.db.collection(col).doc(docId).set(cleanItem);
+  } catch (error) {
+    console.error(`Failed to sync item to Firestore (${col}/${docId}):`, error);
+  }
+};
+
+const seedFirestore = async () => {
+  console.log("Seeding Cloud Firestore with default seed data...");
+  const seed = JSON.parse(JSON.stringify(defaultSeedData));
+  
+  // Pre-hash passwords and set defaults for seed users
+  seed.users.forEach(u => {
+    u.password = sha256(u.password);
+    u.emailVerified = true;
+    u.createdAt = new Date('2026-06-01T08:00:00Z').toISOString();
+    u.lastLogin = new Date().toISOString();
+    u.address = u.role === 'shipper' ? '123 Shipper Way' : '456 Carrier Blvd';
+    u.city = 'Atlanta';
+    u.state = 'GA';
+    u.zip = '30303';
+    u.country = 'United States';
+  });
+
+  for (const u of seed.users) {
+    await syncItem('users', u);
+  }
+  for (const s of seed.shipments) {
+    await syncItem('shipments', s);
+  }
+  for (const b of seed.bids) {
+    await syncItem('bids', b);
+  }
+  console.log("Firestore seeding completed successfully.");
+};
+
+const initFirestoreSync = () => {
+  if (!window.useFirebase || !window.db) return;
+
+  const collections = ['users', 'shipments', 'bids', 'negotiations', 'violations', 'activityLogs', 'ratings'];
+  let initialLoadsRemaining = collections.length;
+
+  collections.forEach(col => {
+    window.db.collection(col).onSnapshot(snapshot => {
+      let changed = false;
+      
+      if (!data[col]) {
+        data[col] = [];
+      }
+
+      snapshot.docChanges().forEach(change => {
+        const docData = change.doc.data();
+        const id = change.doc.id;
+
+        if (change.type === "added" || change.type === "modified") {
+          const idx = data[col].findIndex(item => {
+            const itemId = item.id || item.bidId;
+            const docId = docData.id || docData.bidId;
+            return itemId === docId;
+          });
+          if (idx > -1) {
+            if (JSON.stringify(data[col][idx]) !== JSON.stringify(docData)) {
+              data[col][idx] = docData;
+              changed = true;
+            }
+          } else {
+            data[col].push(docData);
+            changed = true;
+          }
+        } else if (change.type === "removed") {
+          const idx = data[col].findIndex(item => {
+            const itemId = item.id || item.bidId;
+            const docId = docData.id || docData.bidId;
+            return itemId === docId;
+          });
+          if (idx > -1) {
+            data[col].splice(idx, 1);
+            changed = true;
+          }
+        }
+      });
+
+      if (initialLoadsRemaining > 0) {
+        initialLoadsRemaining--;
+        if (initialLoadsRemaining === 0) {
+          if (data.users.length === 0 && data.shipments.length === 0) {
+            seedFirestore();
+          }
+        }
+      }
+
+      if (changed) {
+        localStorage.setItem(STORE_KEY, JSON.stringify(data));
+        window.dispatchEvent(new CustomEvent('movana-store-updated'));
+      }
+    });
+  });
+};
+
 // Load data from localStorage
 const load = () => {
   const stored = localStorage.getItem(STORE_KEY);
@@ -512,7 +617,7 @@ const load = () => {
           else if (s.id === 'ship_2') pallets = 26;
           else if (s.id === 'ship_3') pallets = 10;
           else if (s.id === 'ship_4') pallets = 24;
-
+ 
           s.shipmentTypeDetails = {
             commodity: commodity,
             pallets: pallets,
@@ -551,7 +656,12 @@ const load = () => {
     data.ratings = [];
     save();
   }
-};
+
+  // Initialize Firestore listeners after loading initial localStorage cache
+  if (window.useFirebase) {
+    initFirestoreSync();
+  }
+};;
 
 // Save data to localStorage
 const save = () => {
@@ -614,6 +724,7 @@ const Store = {
 
     data.users.push(newUser);
     save();
+    syncItem('users', newUser);
 
     // Log simulated email verification
     console.log("=== [SIMULATED EMAIL DELIVERY] ===");
@@ -623,6 +734,65 @@ const Store = {
     console.log("====================================");
 
     return newUser;
+  },
+
+  registerSocialUser: (username, email, role, companyName, additionalData = {}) => {
+    load();
+    // Check if email already exists
+    let user = data.users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+    if (user) {
+      return maskUser(user, user);
+    }
+    
+    const newUser = {
+      id: `u_${generateId()}`,
+      username: username || email.split('@')[0],
+      password: sha256(`social_${Date.now()}`), // Secure placeholder
+      role,
+      companyName: companyName || `${username || email.split('@')[0]}'s Freight`,
+      contactName: additionalData.contactName || (username ? (username.charAt(0).toUpperCase() + username.slice(1)) : 'Social User'),
+      phone: additionalData.phone || '1-800-555-0100',
+      email: email,
+      emailVerified: true, // Social accounts are pre-verified
+      address: '',
+      city: '',
+      state: '',
+      zip: '',
+      country: 'United States',
+      createdAt: new Date().toISOString(),
+      lastLogin: new Date().toISOString()
+    };
+
+    if (role === 'carrier') {
+      newUser.mcNumber = additionalData.mcNumber || '';
+      newUser.dotNumber = additionalData.dotNumber || '';
+      newUser.equipmentTypes = additionalData.equipmentTypes || [];
+      newUser.companyLogo = '';
+    }
+
+    data.users.push(newUser);
+    save();
+    syncItem('users', newUser);
+
+    // Log activity
+    if (Store.addActivityLog) {
+      Store.addActivityLog(newUser.id, 'user_registered', 'Account created via social authentication.');
+    }
+
+    return newUser;
+  },
+
+  loginSocialUser: (email) => {
+    load();
+    const user = data.users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      throw new Error('User not found.');
+    }
+    user.lastLogin = new Date().toISOString();
+    data.currentUser = user;
+    save();
+    syncItem('users', user);
+    return maskUser(user, user);
   },
 
   loginUser: (username, password) => {
@@ -645,6 +815,7 @@ const Store = {
       user.verificationOtp = otp;
       user.verificationExpires = Date.now() + 5 * 60 * 1000;
       save();
+      syncItem('users', user);
 
       console.log("=== [SIMULATED EMAIL DELIVERY (LOGIN UNVERIFIED)] ===");
       console.log(`To: ${user.email}`);
@@ -658,6 +829,7 @@ const Store = {
     user.lastLogin = new Date().toISOString();
     data.currentUser = user;
     save();
+    syncItem('users', user);
     return maskUser(user, user);
   },
 
@@ -683,6 +855,7 @@ const Store = {
     data.currentUser = user;
     
     save();
+    syncItem('users', user);
     
     // Log audit
     Store.addActivityLog(user.id, 'email_verified', 'Account email verified successfully during registration.');
@@ -701,6 +874,7 @@ const Store = {
     user.verificationOtp = otp;
     user.verificationExpires = Date.now() + 5 * 60 * 1000;
     save();
+    syncItem('users', user);
 
     console.log("=== [SIMULATED EMAIL DELIVERY (RESEND)] ===");
     console.log(`To: ${user.email}`);
@@ -764,6 +938,7 @@ const Store = {
       data.currentUser = user;
     }
     save();
+    syncItem('users', user);
 
     if (changes.length > 0) {
       Store.addActivityLog(user.id, 'profile_update', `Updated profile fields: ${changes.join(', ')}`);
@@ -799,6 +974,7 @@ const Store = {
       data.currentUser = user;
     }
     save();
+    syncItem('users', user);
 
     Store.addActivityLog(user.id, 'security_update', details);
     return maskUser(user, user);
@@ -817,6 +993,7 @@ const Store = {
     };
     data.activityLogs.push(log);
     save();
+    syncItem('activityLogs', log);
     return log;
   },
 
@@ -918,6 +1095,7 @@ const Store = {
     };
     data.shipments.unshift(newShipment); // Add to top
     save();
+    syncItem('shipments', newShipment);
     return newShipment;
   },
 
@@ -932,6 +1110,7 @@ const Store = {
       shipment.carrierName = carrierName;
     }
     save();
+    syncItem('shipments', shipment);
     return shipment;
   },
 
@@ -1008,6 +1187,8 @@ const Store = {
     }
     
     save();
+    syncItem('bids', newBid);
+    syncItem('shipments', shipment);
     return newBid;
   },
 
@@ -1031,10 +1212,13 @@ const Store = {
     data.bids.forEach(b => {
       if (b.shipmentId === bid.shipmentId && b.id !== bidId) {
         b.status = 'rejected';
+        syncItem('bids', b);
       }
     });
     
     save();
+    syncItem('bids', bid);
+    syncItem('shipments', shipment);
     return { bid, shipment };
   },
 
@@ -1045,6 +1229,7 @@ const Store = {
     
     bid.status = 'rejected';
     save();
+    syncItem('bids', bid);
     return bid;
   },
 
@@ -1069,6 +1254,7 @@ const Store = {
         };
         data.negotiations.push(neg);
         save();
+        syncItem('negotiations', neg);
       }
     }
     return neg;
@@ -1100,11 +1286,14 @@ const Store = {
         const shipment = data.shipments.find(s => s.id === bid.shipmentId);
         if (shipment) {
           shipment.status = 'negotiating';
+          syncItem('shipments', shipment);
         }
+        syncItem('bids', bid);
       }
     }
     
     save();
+    syncItem('negotiations', neg);
     return neg;
   },
 
@@ -1120,6 +1309,7 @@ const Store = {
     };
     data.violations.push(violation);
     save();
+    syncItem('violations', violation);
     return violation;
   },
   
@@ -1133,6 +1323,9 @@ const Store = {
   resetStore: () => {
     data = JSON.parse(JSON.stringify(defaultSeedData)); // Deep copy
     save();
+    if (window.useFirebase) {
+      seedFirestore();
+    }
   },
 
   // Photos Storage (IndexedDB Async Helpers)

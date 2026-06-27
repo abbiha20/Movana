@@ -1,0 +1,64 @@
+"Module","Feature ID","Feature Name","Testing Objective","Test Scenario","Test Steps","Expected Result","Validation Mode","Status","Notes"
+"Authentication","AUTH-01","User Registration (Normal)","Verify normal registration process","Create new Shipper account","1. Navigate to auth view and click ""Register"" tab.
+2. Enter a unique username, password, and company name.
+3. Keep the role selected as ""Shipper"" and submit the form.","Account created successfully; database record initialized; user is redirected to the OTP verification screen.","Manual","Passed","Hashed password stored securely (SHA-256)."
+"Authentication","AUTH-02","OTP Verification & Activation","Verify email activation flow using OTP","Verify registration with 6-digit OTP code","1. Check registration logs or debug console for the generated OTP code.
+2. Enter the 6-digit OTP code in the input field and click verify.","User account marked active (""emailVerified: true""); logged in automatically; redirected to dashboard.","Manual","Passed","Falls back to debug console print if SMTP environment variables are unconfigured."
+"Authentication","AUTH-03","Invalid OTP Handling","Verify input verification robustness","Attempt verification with invalid OTP code","1. Enter an incorrect 6-digit number in the OTP field.
+2. Click ""Verify"".","Shows error ""Invalid verification code""; user account remains unverified (inactive).","Manual","Passed","Blocks login of unverified users."
+"Authentication","AUTH-04","OTP Code Resending","Verify OTP regeneration functionality","Resend verification email OTP","1. Click ""Resend OTP"" link on the verification screen.","Generates a new 6-digit code; resets the 5-minute expiry timer; shows toast notification confirming resend.","Manual","Passed","Updates store record automatically."
+"Authentication","AUTH-05","User Login (Normal)","Verify secure login using normal credentials","Sign in with valid username and password","1. Navigate to auth screen and click ""Login"" tab.
+2. Input registered username and password.
+3. Click ""Sign In"".","User authenticated successfully; role loaded; redirected to Shipper/Carrier dashboard.","Manual","Passed","Checks SHA-256 hash matching."
+"Authentication","AUTH-06","Google Social Auth","Verify quick social login via Google","Register or sign in with Google account","1. Click ""Google"" button on the login card.
+2. Authorize account in pop-up screen.
+3. Choose role and company name if first login.","Google token validated; user account created/logged in instantly; marked as pre-verified.","Manual","Passed","Uses social login simulation panel."
+"Authentication","AUTH-07","iCloud Social Auth","Verify quick social login via iCloud","Register or sign in with Apple iCloud account","1. Click ""iCloud"" button on the login card.
+2. Input details on iCloud consent card.
+3. Complete mock authentication.","iCloud ID validated; user logged in successfully; marked pre-verified.","Manual","Passed","Uses social login simulation panel."
+"Authentication","AUTH-08","User Profile Updates","Verify settings page editing functionality","Modify account email and phone number","1. Open Profile/Settings drawer or modal.
+2. Modify email or phone fields.
+3. Click ""Save Profile"".","New fields saved to database; profile updates immediately across UI; success toast displayed.","Manual","Passed","Updates stored user object."
+"Authentication","AUTH-09","User Logout","Verify session termination","Clear active session state","1. Click the ""Logout"" button in the navigation header.","Session variables cleared; localStorage updated; view redirected to public Landing view; navigation links reset.","Manual","Passed","Resets all view states."
+"Shipper Load Management","SHIP-01","Create Load (Standard)","Verify core shipment posting flow","Post new standard Freight load","1. Log in as a Shipper.
+2. Fill out Post Shipment form (locations, weight, budget, dimensions).
+3. Select type ""Freight"".
+4. Click ""Submit"".","Load successfully saved with status ""Open / Bidding""; shows in Shipper list; visible to Carriers.","Manual","Passed","Coordinates generated automatically."
+"Shipper Load Management","SHIP-02","Address Autocomplete Suggestions","Verify mapping location helper interface","Input locations with autocomplete suggestions","1. Type search query (e.g. ""Chicago"") in Pickup or Delivery input.","Autocompletion menu overlays showing matching locations; selecting a suggestion fills text and logs coordinates.","Manual","Passed","Utilizes built-in location dataset."
+"Shipper Load Management","SHIP-03","Smart Cargo Sub-Forms","Verify dynamic form inputs per cargo type","Select ""Vehicle Transport"" cargo type","1. Open the Post Shipment form.
+2. Select ""Vehicle Transport"" from Shipment Type dropdown.","Form dynamically shows ""Vehicle Details"" sections (Vehicle sub-type, Make, Model, Year, VIN fields).","Manual","Passed","Improves user posting experience."
+"Shipper Load Management","SHIP-04","VIN Decoder API Integration","Verify NHTSA external API lookup","Input 17-character VIN with network connection","1. Type valid 17-character VIN in the VIN input box.
+2. Wait for automatic validation.","NHTSA VPIC API queried; auto-fills vehicle make, model, and year fields; displays verification checkmark.","Manual","Passed","Uses live HTTPS requests to dot.gov."
+"Shipper Load Management","SHIP-05","VIN Decode Fallback","Verify offline decoding compatibility","Input VIN with no network/API failure fallback","1. Enter VIN starting with known prefix (e.g. 5YJ for Tesla).
+2. Force network offline or trigger fallback.","Decodes locally via regex-based decodeVINString; correctly populates make/model; prints status toast.","Manual","Passed","Ensures high offline availability."
+"Shipper Load Management","SHIP-06","Image Upload & Preview","Verify attachment rendering and persistence","Attach photos to shipment post","1. Click ""Add Photos"" on posting form.
+2. Select an image file.","File processed into Base64 format; preview thumbnail renders; saved under shipment database record.","Manual","Passed","Compressed to avoid exceeding storage limits."
+"Shipper Load Management","SHIP-07","Filter Shipments List","Verify shipper board tabs","Filter My Shipments list by status","1. On Shipper dashboard, select tabs ""Open"", ""Assigned"", or ""Completed"".","Lists are instantly filtered to show only shipments matching the selected status.","Manual","Passed","Uses reactive store queries."
+"Carrier Operations","CARR-01","Browse Load Board","Verify carrier marketplace view","Inspect open shipments on carrier board","1. Log in as Carrier.
+2. Navigate to ""Load Board"".","Displays all loads currently open for bids; hides restricted shipper details.","Manual","Passed","Hides exact location addresses."
+"Carrier Operations","CARR-02","Search & Filter Load Board","Verify load board query filter mechanisms","Search loads by keyword and cargo type","1. Enter text in carrier search bar.
+2. Choose cargo type from dropdown.","List updates in real-time showing matches for location names, types, or budgets.","Manual","Passed","Performant filtering on UI lists."
+"Carrier Operations","CARR-03","View Route Map","Verify routing map visibility","Open load details modal to inspect route","1. Click ""View Details"" on any open load.","Details modal opens showing full details and route line connecting origin/destination on the map.","Manual","Passed","Uses Leaflet map / SVG route path."
+"Carrier Operations","CARR-04","Submit Bid on Load","Verify proposal submission flow","Propose price, delivery date, and message","1. Click ""Submit Bid"" in details.
+2. Enter bid amount, delivery date, and text pitch.
+3. Click ""Submit"".","Bid saved to database; bid count updates on load board; shows in Carrier's active bids dashboard.","Manual","Passed","Multiple bids allowed per carrier."
+"Carrier Operations","CARR-05","Accept Carrier Bid","Verify awarding process","Shipper awards load to specific carrier bid","1. Log in as Shipper, open shipment.
+2. Review bid list, click ""Accept Bid"" on carrier.","Shipment status changes to ""Assigned""; carrier assigned; other bids rejected; route unlocked.","Manual","Passed","Updates in-transit status automatically."
+"Carrier Operations","CARR-06","In-Transit Job Status","Verify career job start flow","Carrier starts transit on active job","1. Log in as Carrier, open ""My Jobs"".
+2. Click ""Start Transit"" on assigned shipment.","Status updates to ""In Transit"" in store; Shipper dashboard reflects update immediately.","Manual","Passed","Tracks carrier assignment."
+"Carrier Operations","CARR-07","Deliver Shipment","Verify cargo delivery confirmation","Carrier marks active job as completed","1. On Carrier active jobs, click ""Mark Delivered"" on ""In Transit"" load.","Status updates to ""Delivered""; load board updates; final logs recorded.","Manual","Passed","Prepares shipment for completion."
+"Negotiation & Chat","CHAT-01","Direct Chat Messaging","Verify bid-specific chat rooms","Exchange messages between carrier and shipper","1. Open active bid, click ""Message"".
+2. Send plain text messages.","Message log loaded and saved dynamically per bid; displays messages with timestamp and sender tags.","Manual","Passed","Isolates conversations by bid ID."
+"Negotiation & Chat","CHAT-02","Counter-Offer Integration","Verify pricing negotiation via chat","Send counter-offer amount in bid chat","1. Open chat modal.
+2. Type an offer amount in input field, click ""Send Offer"".","Message posted with pricing offer banner; updates bid's current proposed price in database.","Manual","Passed","Updates bid state reactively."
+"Security & Compliance","COMP-01","Address PII Protection","Verify user address information mask rules","View unawarded shipment details as Carrier","1. Log in as Carrier.
+2. Inspect a shipment you are bidding on.","Street addresses and precise coordinate details are hidden; shows only general city and state.","Manual / Automated","Passed","Unlocks exact coordinates upon bid acceptance."
+"Security & Compliance","COMP-02","User Name Anonymization","Verify company identity masking rules","Browse public loads and bids","1. Open Load Board as guest or carrier.","Shipper/Carrier name displays as anonymized string (e.g. ""Shipper #A42B"") unless awarded.","Manual / Automated","Passed","Uses deterministic ID hash generator."
+"Security & Compliance","COMP-03","PII Chat Filter & Violations","Verify real-time compliance filters","Try to send phone number/email in bid chat","1. Open chat, type email ""john@carrier.com"" or phone ""555-1234"".
+2. Click Send.","Message blocked/redacted; user warned of compliance policy violation; violation count incremented.","Manual / Automated","Passed","Logs violation details in store."
+"Backend & Data Sync","DATA-01","Firebase Cloud Sync","Verify multi-device state synchronization","Perform writes with Firebase credentials set","1. Set Firestore credentials.
+2. Add cargo or bids.","Writes synced directly to Firebase Cloud; local caching automatically updated.","Automated / Manual","Passed","Uses cloud Firestore collections."
+"Backend & Data Sync","DATA-02","LocalStorage Fallback","Verify offline single-device sandbox fallback","Perform writes with empty/default config","1. Set firebaseConfig to empty placeholders.
+2. Reload app, interact.","Fallback warning displayed in console; mock store stores state in HTML5 localStorage; operations continue offline.","Automated / Manual","Passed","Zero configuration setup."
+"Backend & Data Sync","DATA-03","Send Email API Endpoint","Verify Vercel serverless function","POST email payload to `/api/send-email`","1. POST request with mock/real SMTP variables to API.","If variables missing, returns 400 with missing fields list. If present, delivers email.","Automated","Passed","Compatible with Vercel serverless environment."
+"Backend & Data Sync","DATA-04","Health Check Utility","Verify system diagnostics route","Query health check route `/api/health-check`","1. Query GET `/api/health-check` via HTTP client.","Runs self-connection checks on SMTP server; reports connection health and success state.","Automated","Passed","Assures SMTP system is online."

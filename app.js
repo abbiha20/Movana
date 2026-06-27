@@ -7289,6 +7289,275 @@ function showOTPVerification(username) {
   });
 }
 
+function bindSocialAuthListeners() {
+  const googleBtn = document.getElementById('social-google-btn');
+  const icloudBtn = document.getElementById('social-icloud-btn');
+
+  if (googleBtn) {
+    googleBtn.onclick = () => openSocialLoginPopup('google');
+  }
+  if (icloudBtn) {
+    icloudBtn.onclick = () => openSocialLoginPopup('icloud');
+  }
+}
+
+function openSocialLoginPopup(provider) {
+  if (window.useFirebase && window.auth) {
+    console.log(`Using Firebase Auth for ${provider}...`);
+    let authProvider;
+    if (provider === 'google') {
+      authProvider = new firebase.auth.GoogleAuthProvider();
+    } else if (provider === 'icloud') {
+      authProvider = new firebase.auth.OAuthProvider('apple.com');
+    }
+    
+    if (authProvider) {
+      window.auth.signInWithPopup(authProvider)
+        .then((result) => {
+          const user = result.user;
+          const profile = {
+            email: user.email,
+            name: user.displayName || user.email.split('@')[0],
+            avatar: user.photoURL || '',
+            provider: provider
+          };
+          handleSocialAuthSuccess(profile);
+        })
+        .catch((error) => {
+          console.error("Firebase auth failed:", error);
+          showToast(`Authentication failed: ${error.message}`, true);
+        });
+      return;
+    }
+  }
+
+  // Fallback to Vercel API redirect flow in a popup
+  const width = 500;
+  const height = 650;
+  const left = window.screenX + (window.outerWidth - width) / 2;
+  const top = window.screenY + (window.outerHeight - height) / 2;
+  
+  const url = `/api/auth/login?provider=${provider === 'icloud' ? 'apple' : 'google'}`;
+  
+  console.log(`Opening social login redirect popup for provider: ${provider}...`);
+  window.open(url, 'social-login', `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,status=no`);
+}
+
+function handleSocialAuthSuccess(profile) {
+  const email = profile.email;
+  const name = profile.name || email.split('@')[0];
+  const avatar = profile.avatar || '';
+  const provider = profile.provider || 'google';
+
+  console.log(`OAuth Authentication Succeeded: ${email} via ${provider}`);
+
+  // Check if user exists in our local store
+  const existingUser = Store.getUsers().find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+
+  if (existingUser) {
+    // Existing user: log in immediately
+    const user = Store.loginSocialUser(email);
+    showToast(`Welcome back, ${user.companyName}!`);
+    switchView(user.role);
+  } else {
+    // New user: show onboarding modal
+    showSocialOnboardingModal({ email, name, avatar, provider });
+  }
+}
+
+function showSocialOnboardingModal(profile) {
+  // Remove existing modal if any
+  const existing = document.getElementById('social-onboarding-modal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'social-onboarding-modal';
+  overlay.className = 'social-modal-overlay';
+
+  const equipmentOptions = [
+    'Dry Van', 'Reefer', 'Flatbed', 'Hotshot', 
+    'Car Hauler', 'Box Truck', 'Power Only', 'Step Deck', 'Lowboy'
+  ];
+
+  let equipmentCheckboxesHtml = '';
+  equipmentOptions.forEach(eq => {
+    equipmentCheckboxesHtml += `
+      <label style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" class="onboard-equip-cb" value="${eq}"> ${eq}
+      </label>
+    `;
+  });
+
+  overlay.innerHTML = `
+    <div class="social-modal-card" style="box-sizing: border-box;">
+      <h2 style="font-size: 24px; font-weight: 800; color: var(--text-main); margin: 0 0 8px 0;">Complete Your Profile</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 24px;">Welcome to Movana! Finish setting up your account details below.</p>
+      
+      <div id="onboard-error" class="alert alert-danger d-none" style="margin-bottom: 16px; padding: 12px; font-size: 13px; border-radius: var(--radius-sm); color: #ef4444; background: #fef2f2; border: 1px solid #fee2e2;"></div>
+
+      <form id="social-onboard-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Email Address (Verified)</label>
+          <input type="text" value="${profile.email}" class="form-control" readonly style="background-color: #f1f5f9; cursor: not-allowed; width: 100%;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Contact Name</label>
+          <input type="text" id="onboard-contact" value="${profile.name}" class="form-control" placeholder="e.g. John Doe" required style="width: 100%;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Desired Username</label>
+          <input type="text" id="onboard-username" value="${profile.email.split('@')[0]}" class="form-control" placeholder="e.g. jdoe99" required minlength="3" style="width: 100%;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Company Name</label>
+          <input type="text" id="onboard-company" class="form-control" placeholder="e.g. Acme Logistics" required style="width: 100%;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Mobile Phone Number</label>
+          <input type="tel" id="onboard-phone" class="form-control" placeholder="e.g. 555-0100" required style="width: 100%;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Select Role</label>
+          <div class="role-select-container">
+            <input type="radio" name="onboard-role" id="onboard-role-shipper" class="role-radio" value="shipper" checked>
+            <label for="onboard-role-shipper" class="role-label shipper-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+              </svg>
+              <span>Shipper</span>
+            </label>
+
+            <input type="radio" name="onboard-role" id="onboard-role-carrier" class="role-radio" value="carrier">
+            <label for="onboard-role-carrier" class="role-label carrier-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="1" y="3" width="15" height="13"></rect>
+                <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                <circle cx="5.5" cy="18.5" r="2.5"></circle>
+                <circle cx="18.5" cy="18.5" r="2.5"></circle>
+              </svg>
+              <span>Carrier</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="onboard-carrier-panel" class="carrier-panel d-none">
+          <h3>Carrier Credentials</h3>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">MC Number *</label>
+            <input type="text" id="onboard-mc" class="form-control" placeholder="MC123456" style="width: 100%;">
+          </div>
+          <div class="form-group" style="margin-top: 12px; margin-bottom: 0;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">DOT Number *</label>
+            <input type="text" id="onboard-dot" class="form-control" placeholder="DOT1234567" style="width: 100%;">
+          </div>
+          <div class="form-group" style="margin-top: 12px; margin-bottom: 0;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Equipment Types *</label>
+            <div class="equipment-grid">
+              ${equipmentCheckboxesHtml}
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">Create Profile & Get Started</button>
+        <button type="button" id="btn-onboard-cancel" class="btn btn-outline" style="width: 100%;">Cancel</button>
+      </form>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Trigger CSS transition animation
+  setTimeout(() => overlay.classList.add('active'), 50);
+
+  // Bind radio toggles
+  const shipperRadio = overlay.querySelector('#onboard-role-shipper');
+  const carrierRadio = overlay.querySelector('#onboard-role-carrier');
+  const carrierPanel = overlay.querySelector('#onboard-carrier-panel');
+
+  shipperRadio.addEventListener('change', () => carrierPanel.classList.add('d-none'));
+  carrierRadio.addEventListener('change', () => carrierPanel.classList.remove('d-none'));
+
+  // Cancel Handler
+  overlay.querySelector('#btn-onboard-cancel').onclick = () => {
+    overlay.classList.remove('active');
+    setTimeout(() => overlay.remove(), 300);
+  };
+
+  // Onboard Submit Handler
+  const onboardForm = overlay.querySelector('#social-onboard-form');
+  onboardForm.onsubmit = (e) => {
+    e.preventDefault();
+    
+    const username = overlay.querySelector('#onboard-username').value.trim();
+    const contactName = overlay.querySelector('#onboard-contact').value.trim();
+    const companyName = overlay.querySelector('#onboard-company').value.trim();
+    const phone = overlay.querySelector('#onboard-phone').value.trim();
+    const role = overlay.querySelector('input[name="onboard-role"]:checked').value;
+
+    const errors = [];
+    if (!username || username.length < 3) errors.push("Username must be at least 3 characters.");
+    if (!contactName) errors.push("Contact name is required.");
+    if (!companyName) errors.push("Company name is required.");
+    if (!phone) errors.push("Phone number is required.");
+
+    let mcNumber = '';
+    let dotNumber = '';
+    let equipmentTypes = [];
+
+    if (role === 'carrier') {
+      mcNumber = overlay.querySelector('#onboard-mc').value.trim();
+      dotNumber = overlay.querySelector('#onboard-dot').value.trim();
+      const selectedCbs = overlay.querySelectorAll('.onboard-equip-cb:checked');
+      selectedCbs.forEach(cb => equipmentTypes.push(cb.value));
+
+      if (!mcNumber) errors.push("MC Number is required for Carriers.");
+      if (!dotNumber) errors.push("DOT Number is required for Carriers.");
+      if (equipmentTypes.length === 0) errors.push("Please select at least one Equipment Type.");
+    }
+
+    if (errors.length > 0) {
+      const errDiv = overlay.querySelector('#onboard-error');
+      errDiv.innerHTML = errors.join('<br>');
+      errDiv.classList.remove('d-none');
+      return;
+    }
+
+    try {
+      // Register via social authentication
+      const additionalData = { contactName, phone };
+      if (role === 'carrier') {
+        additionalData.mcNumber = mcNumber;
+        additionalData.dotNumber = dotNumber;
+        additionalData.equipmentTypes = equipmentTypes;
+      }
+
+      const newUser = Store.registerSocialUser(username, profile.email, role, companyName, additionalData);
+      
+      // Auto Login
+      const loggedUser = Store.loginSocialUser(newUser.email);
+
+      // Clean up modal
+      overlay.classList.remove('active');
+      setTimeout(() => overlay.remove(), 300);
+
+      // Redirect
+      showToast(`Welcome to Movana, ${loggedUser.companyName}!`);
+      switchView(loggedUser.role);
+    } catch (err) {
+      const errDiv = overlay.querySelector('#onboard-error');
+      errDiv.textContent = err.message || "Failed to create profile.";
+      errDiv.classList.remove('d-none');
+    }
+  };
+}
+
 function restoreAuthCardStructure() {
   const card = document.querySelector('.auth-card');
   if (card) {
@@ -7303,6 +7572,23 @@ function restoreAuthCardStructure() {
       <h2 id="auth-title">Welcome Back</h2>
       <p id="auth-subtitle">Sign in to manage your shipments and bids.</p>
       <form id="auth-form"></form>
+      
+      <div class="social-divider">
+        <span>or continue with</span>
+      </div>
+
+      <div class="social-buttons-container">
+        <button type="button" class="btn-social google-btn" id="social-google-btn">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google Logo" style="width: 18px; height: 18px; margin-right: 8px;">
+          Google
+        </button>
+        <button type="button" class="btn-social icloud-btn" id="social-icloud-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-1 .04-2.22.67-2.94 1.52-.64.74-1.2 1.88-1.05 3 .16 3.01.83 2.43 1.15 2.25 1.12.08 2.19-.7 2.8-1.71z"/>
+          </svg>
+          iCloud
+        </button>
+      </div>
     `;
     elements.tabLogin = document.getElementById('tab-login');
     elements.tabRegister = document.getElementById('tab-register');
@@ -7313,6 +7599,7 @@ function restoreAuthCardStructure() {
     elements.tabLogin.addEventListener('click', () => setAuthMode('login'));
     elements.tabRegister.addEventListener('click', () => setAuthMode('register'));
     bindAuthFormSubmit();
+    bindSocialAuthListeners();
     setAuthMode('login');
   }
 }
@@ -8234,7 +8521,24 @@ function renderProfileSettingsTab(tabName) {
 // --- SETUP EVENT LISTENERS ---
 function initApp() {
   bindAuthFormSubmit();
+  bindSocialAuthListeners();
   setAuthMode('login');
+
+  // Listen for social login popup messages
+  window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+
+    if (event.data) {
+      if (event.data.type === 'social-auth-verified') {
+        handleSocialAuthSuccess(event.data.user);
+      } else if (event.data.type === 'social-login-success') {
+        const user = event.data.user;
+        console.log("Social login successful! User object:", JSON.stringify(user, null, 2));
+        showToast(`Welcome back, ${user.companyName}!`);
+        switchView(user.role);
+      }
+    }
+  });
 
   // Navigation Logo returns home
   elements.logo.addEventListener('click', () => {
@@ -9023,8 +9327,37 @@ function initApp() {
   }, 1000);
 }
 
+  // Real-time Firestore Update UI listener
+  window.addEventListener('movana-store-updated', () => {
+    const user = Store.getCurrentUser();
+    if (!user) return;
+
+    // Update navigation badges
+    updateInboxBadge();
+    updateNotificationCenterUI();
+
+    // Re-render active view
+    if (currentView === 'shipper') {
+      renderShipperDashboard();
+    } else if (currentView === 'carrier') {
+      renderCarrierDashboard();
+    } else if (currentView === 'loadboard') {
+      renderLoadBoard();
+    } else if (currentView === 'inbox') {
+      renderInboxConversationList(currentInboxFilter);
+      if (activeInboxBidId) {
+        if (activeInboxTab === 'messages') {
+          renderInboxChatHistory(activeInboxBidId);
+        } else {
+          renderInboxWorkspaceContent(activeInboxBidId);
+        }
+      }
+    } else if (currentView === 'profile') {
+      renderProfileViewContent();
+    }
+  });
+
 // Initial Run
 initApp();
 
 })();
-

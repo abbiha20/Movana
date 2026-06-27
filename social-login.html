@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect Account - Movana</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Google Colors */
+      --google-blue: #1a73e8;
+      --google-gray: #5f6368;
+      --google-border: #dadce0;
+      
+      /* Apple Colors */
+      --apple-black: #000000;
+      --apple-gray: #86868b;
+      --apple-border: #d2d2d7;
+      
+      /* Movana Colors */
+      --color-shipper: #127cc1;
+      --color-carrier: #16a34a;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --bg-main: #f8fafc;
+      --border-color: #e2e8f0;
+      --radius-lg: 16px;
+      --radius-md: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Inter', sans-serif;
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    /* Card Layout */
+    .auth-container {
+      background: white;
+      width: 100%;
+      max-width: 440px;
+      padding: 40px 30px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.08), 0 0 1px 1px rgba(15, 23, 42, 0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Provider specific overrides */
+    .provider-google .logo-container svg {
+      width: 40px;
+      height: 40px;
+    }
+
+    .provider-icloud {
+      background-color: #ffffff;
+    }
+    
+    .provider-icloud .logo-container svg {
+      width: 36px;
+      height: 36px;
+      fill: #000;
+    }
+
+    .logo-container {
+      text-align: center;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+
+    /* Accounts List */
+    .account-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .account-item {
+      display: flex;
+      align-items: center;
+      padding: 14px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: white;
+    }
+
+    .account-item:hover {
+      background-color: #f8fafc;
+      border-color: #cbd5e1;
+      transform: translateY(-1px);
+    }
+
+    .account-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      margin-right: 14px;
+    }
+
+    .account-info {
+      flex: 1;
+      text-align: left;
+    }
+
+    .account-name {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .account-email {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .account-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-shipper {
+      background-color: #e0f2fe;
+      color: var(--color-shipper);
+    }
+
+    .badge-carrier {
+      background-color: #dcfce7;
+      color: var(--color-carrier);
+    }
+
+    .btn-use-other {
+      background: none;
+      border: none;
+      color: var(--google-blue);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      margin-top: 10px;
+      transition: color 0.15s;
+    }
+
+    .provider-icloud .btn-use-other {
+      color: var(--apple-black);
+      text-decoration: underline;
+    }
+
+    .btn-use-other:hover {
+      opacity: 0.8;
+    }
+
+    /* Forms */
+    .d-none {
+      display: none !important;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text-main);
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-md);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+      border-color: #94a3b8;
+    }
+
+    .btn-action {
+      width: 100%;
+      padding: 12px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-google {
+      background-color: var(--google-blue);
+      color: white;
+    }
+    
+    .btn-google:hover {
+      background-color: #1557b0;
+    }
+
+    .btn-apple {
+      background-color: var(--apple-black);
+      color: white;
+    }
+    
+    .btn-apple:hover {
+      background-color: #222;
+    }
+
+    .btn-secondary {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      margin-top: 10px;
+    }
+
+    .btn-secondary:hover {
+      background-color: #f8fafc;
+      border-color: #cbd5e1;
+    }
+
+    /* Role selection container */
+    .role-select-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .role-radio {
+      display: none;
+    }
+
+    .role-label {
+      border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .role-radio:checked + .role-label.shipper-btn {
+      border-color: var(--color-shipper);
+      background-color: #f0f9ff;
+      color: var(--color-shipper);
+    }
+
+    .role-radio:checked + .role-label.carrier-btn {
+      border-color: var(--color-carrier);
+      background-color: #f0fdf4;
+      color: var(--color-carrier);
+    }
+
+    /* Carrier Panel */
+    .carrier-panel {
+      padding: 14px;
+      background: #f8fafc;
+      border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin-bottom: 16px;
+    }
+
+    .carrier-panel h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--color-carrier);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .equipment-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      max-height: 120px;
+      overflow-y: auto;
+      padding: 8px;
+      border: 1px solid var(--border-color);
+      background: white;
+      border-radius: 6px;
+      margin-top: 6px;
+    }
+
+    .equipment-grid label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    /* Loading Spinner */
+    .loading-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 0;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3.5px solid #f3f3f3;
+      border-top: 3.5px solid var(--google-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 20px;
+    }
+
+    .provider-icloud .spinner {
+      border-top-color: var(--apple-black);
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .error-box {
+      background-color: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fee2e2;
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-bottom: 16px;
+      line-height: 1.4;
+      text-align: left;
+    }
+  </style>
+</head>
+<body class="provider-google" id="provider-body">
+  <div class="auth-container">
+    <!-- Screen 1: Choose Account -->
+    <div id="screen-choose" class="auth-screen">
+      <div class="logo-container" id="provider-logo">
+        <!-- Google Logo default -->
+        <svg viewBox="0 0 24 24" width="40" height="40">
+          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.92h6.69c-.29 1.5-.1.84-2.48 2.48v2.06h3.99c2.33-2.14 3.54-5.3 3.54-8.39z"/>
+          <path fill="#34A853" d="M12 24c3.24 0 5.97-1.08 7.96-2.91l-3.99-2.06c-1.11.75-2.53 1.19-3.97 1.19-3.07 0-5.67-2.08-6.6-4.88H1.31v2.16C3.26 21.66 7.31 24 12 24z"/>
+          <path fill="#FBBC05" d="M5.4 15.34c-.24-.71-.37-1.47-.37-2.24s.13-1.53.37-2.24V8.7H1.31C.48 10.39 0 12.18 0 14s.48 3.61 1.31 5.3l4.09-2.96z"/>
+          <path fill="#EA4335" d="M12 4.82c1.76 0 3.34.61 4.58 1.79l3.43-3.43C17.97 1.09 15.24 0 12 0 7.31 0 3.26 2.34 1.31 6.46l4.09 2.96c.93-2.8 3.53-4.88 6.6-4.88z"/>
+        </svg>
+      </div>
+      <h1 id="provider-title">Sign in with Google</h1>
+      <div class="subtitle">to continue to <strong style="color: #0f172a;">Movana</strong></div>
+      
+      <div id="choose-error" class="error-box d-none"></div>
+
+      <div class="account-list" id="account-list-container">
+        <!-- Will be populated dynamically -->
+      </div>
+      
+      <button class="btn-use-other" id="btn-show-custom">Use another email</button>
+    </div>
+
+    <!-- Screen 2: Custom Email Input -->
+    <div id="screen-custom" class="auth-screen d-none">
+      <div class="logo-container" id="provider-logo-custom"></div>
+      <h1 id="custom-title">Enter email</h1>
+      <div class="subtitle">Enter your third-party account email address.</div>
+      
+      <div id="custom-error" class="error-box d-none"></div>
+
+      <form id="custom-email-form">
+        <div class="form-group">
+          <label for="custom-email">Email Address</label>
+          <input type="email" id="custom-email" class="form-control" placeholder="e.g. yourname@example.com" required autocomplete="email">
+        </div>
+        
+        <button type="submit" class="btn-action" id="btn-submit-email">Continue</button>
+        <button type="button" class="btn-action btn-secondary" id="btn-back-to-choose">Back</button>
+      </form>
+    </div>
+
+    <!-- Screen 3: First-time Onboarding -->
+    <div id="screen-onboarding" class="auth-screen d-none">
+      <div class="logo-container" id="provider-logo-onboard"></div>
+      <h1>Create Account</h1>
+      <div class="subtitle" style="margin-bottom: 20px;">Complete your Movana profile registration.</div>
+
+      <div id="onboard-error" class="error-box d-none"></div>
+
+      <form id="onboard-form">
+        <!-- Display selected email as read-only -->
+        <div class="form-group" style="opacity: 0.85;">
+          <label>Email Address</label>
+          <input type="email" id="onboard-email" class="form-control" readonly style="background-color: #f1f5f9; cursor: not-allowed;">
+        </div>
+
+        <div class="form-group">
+          <label for="onboard-username">Desired Username</label>
+          <input type="text" id="onboard-username" class="form-control" placeholder="e.g. jdoe99" required minlength="3">
+        </div>
+
+        <div class="form-group">
+          <label for="onboard-contact">Contact Name</label>
+          <input type="text" id="onboard-contact" class="form-control" placeholder="e.g. John Doe" required>
+        </div>
+
+        <div class="form-group">
+          <label for="onboard-company">Company Name</label>
+          <input type="text" id="onboard-company" class="form-control" placeholder="e.g. JD Logistics Corp" required>
+        </div>
+
+        <div class="form-group">
+          <label for="onboard-phone">Mobile Phone</label>
+          <input type="tel" id="onboard-phone" class="form-control" placeholder="e.g. 555-0100" required>
+        </div>
+
+        <!-- Role Select -->
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Select Role</label>
+        <div class="role-select-container">
+          <input type="radio" name="onboard-role" id="onboard-role-shipper" class="role-radio" value="shipper" checked>
+          <label for="onboard-role-shipper" class="role-label shipper-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            Shipper
+          </label>
+
+          <input type="radio" name="onboard-role" id="onboard-role-carrier" class="role-radio" value="carrier">
+          <label for="onboard-role-carrier" class="role-label carrier-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="1" y="3" width="15" height="13"></rect>
+              <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+              <circle cx="5.5" cy="18.5" r="2.5"></circle>
+              <circle cx="18.5" cy="18.5" r="2.5"></circle>
+            </svg>
+            Carrier
+          </label>
+        </div>
+
+        <!-- Carrier Fields -->
+        <div id="onboard-carrier-fields" class="carrier-panel d-none">
+          <h3>Carrier Credentials</h3>
+          
+          <div class="form-group" style="margin-bottom: 10px;">
+            <label for="onboard-mc">MC Number *</label>
+            <input type="text" id="onboard-mc" class="form-control" placeholder="MC123456" style="padding: 8px 12px;">
+          </div>
+          
+          <div class="form-group" style="margin-bottom: 10px;">
+            <label for="onboard-dot">DOT Number *</label>
+            <input type="text" id="onboard-dot" class="form-control" placeholder="DOT1234567" style="padding: 8px 12px;">
+          </div>
+          
+          <label style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px;">Equipment Types *</label>
+          <div class="equipment-grid" id="onboard-equipment-container">
+            <!-- Populated via script -->
+          </div>
+        </div>
+
+        <button type="submit" class="btn-action" id="btn-submit-onboard">Register & Connect</button>
+        <button type="button" class="btn-action btn-secondary" id="btn-cancel-onboard">Cancel</button>
+      </form>
+    </div>
+
+    <!-- Screen 4: Loading -->
+    <div id="screen-loading" class="auth-screen d-none">
+      <div class="loading-container">
+        <div class="spinner"></div>
+        <h2 id="loading-text" style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Connecting account...</h2>
+        <p style="font-size: 13px; color: var(--text-muted);">This will only take a moment.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 1. Setup Query Parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const provider = urlParams.get('provider') === 'icloud' ? 'icloud' : 'google';
+    
+    // UI Theme Config
+    const bodyEl = document.getElementById('provider-body');
+    const titleEl = document.getElementById('provider-title');
+    const submitBtnEmail = document.getElementById('btn-submit-email');
+    const submitBtnOnboard = document.getElementById('btn-submit-onboard');
+
+    // Apple Logo Template
+    const appleLogoHtml = `
+      <svg viewBox="0 0 24 24" width="36" height="36">
+        <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-1 .04-2.22.67-2.94 1.52-.64.74-1.2 1.88-1.05 3 .16 3.01.83 2.43 1.15 2.25 1.12.08 2.19-.7 2.8-1.71z"/>
+      </svg>
+    `;
+    
+    // Google Logo Template
+    const googleLogoHtml = document.getElementById('provider-logo').innerHTML;
+
+    // Apply Theme
+    if (provider === 'icloud') {
+      bodyEl.className = 'provider-icloud';
+      titleEl.textContent = 'Sign in with Apple ID';
+      document.getElementById('provider-logo').innerHTML = appleLogoHtml;
+      document.getElementById('provider-logo-custom').innerHTML = appleLogoHtml;
+      document.getElementById('provider-logo-onboard').innerHTML = appleLogoHtml;
+      
+      submitBtnEmail.className = 'btn-action btn-apple';
+      submitBtnOnboard.className = 'btn-action btn-apple';
+      
+      document.getElementById('custom-title').textContent = 'Enter Apple ID';
+    } else {
+      document.getElementById('provider-logo-custom').innerHTML = googleLogoHtml;
+      document.getElementById('provider-logo-onboard').innerHTML = googleLogoHtml;
+      submitBtnEmail.className = 'btn-action btn-google';
+      submitBtnOnboard.className = 'btn-action btn-google';
+    }
+
+    // 2. Pre-populated Seed Mapped Accounts
+    const mockAccounts = [
+      { name: "John Davis", email: "john.davis@gmail.com", actualEmail: "dispatch@atlasfreight.com", role: "shipper" },
+      { name: "Robert Titan", email: "robert.titan@gmail.com", actualEmail: "loads@titantrucking.com", role: "carrier" },
+      { name: "Sarah Greenwood", email: "sarah.greenwood@gmail.com", actualEmail: "logistics@greenwoodproduce.com", role: "shipper" },
+      { name: "Emma Swift", email: "emma.swift@gmail.com", actualEmail: "bookings@swiftflowtransport.com", role: "carrier" }
+    ];
+
+    // Populate Account List
+    const listContainer = document.getElementById('account-list-container');
+    mockAccounts.forEach((acc, i) => {
+      const initial = acc.name.split(' ').map(n=>n[0]).join('');
+      const div = document.createElement('div');
+      div.className = 'account-item';
+      div.innerHTML = `
+        <div class="account-avatar">${initial}</div>
+        <div class="account-info">
+          <div class="account-name">${acc.name}</div>
+          <div class="account-email">${provider === 'icloud' ? acc.email.replace('gmail.com', 'icloud.com') : acc.email}</div>
+        </div>
+        <span class="account-badge badge-${acc.role}">${acc.role}</span>
+      `;
+      div.onclick = () => handleSocialLogin(acc.actualEmail);
+      listContainer.appendChild(div);
+    });
+
+    // Populate Equipment Checkboxes for Carrier Role
+    const equipmentOptions = [
+      'Dry Van', 'Reefer', 'Flatbed', 'Hotshot', 
+      'Car Hauler', 'Box Truck', 'Power Only', 'Step Deck', 'Lowboy'
+    ];
+    const equipContainer = document.getElementById('onboard-equipment-container');
+    equipmentOptions.forEach(eq => {
+      const label = document.createElement('label');
+      label.innerHTML = `<input type="checkbox" class="onboard-equip-cb" value="${eq}"> ${eq}`;
+      equipContainer.appendChild(label);
+    });
+
+    // Toggle carrier sub-form
+    const shipperRadio = document.getElementById('onboard-role-shipper');
+    const carrierRadio = document.getElementById('onboard-role-carrier');
+    const carrierPanel = document.getElementById('onboard-carrier-fields');
+    
+    shipperRadio.addEventListener('change', () => carrierPanel.classList.add('d-none'));
+    carrierRadio.addEventListener('change', () => carrierPanel.classList.remove('d-none'));
+
+    // Navigation flow handlers
+    const btnShowCustom = document.getElementById('btn-show-custom');
+    const btnBackToChoose = document.getElementById('btn-back-to-choose');
+    const btnCancelOnboard = document.getElementById('btn-cancel-onboard');
+
+    btnShowCustom.onclick = () => switchScreen('custom');
+    btnBackToChoose.onclick = () => switchScreen('choose');
+    btnCancelOnboard.onclick = () => switchScreen('choose');
+
+    // Handle Custom Email submit
+    const customEmailForm = document.getElementById('custom-email-form');
+    customEmailForm.onsubmit = (e) => {
+      e.preventDefault();
+      const email = document.getElementById('custom-email').value.trim();
+      if (!email) return;
+
+      // Show loading
+      switchScreen('loading');
+      document.getElementById('loading-text').textContent = 'Searching accounts...';
+
+      setTimeout(() => {
+        // Access Store object on the opener window
+        try {
+          const openerStore = window.opener && window.opener.Store;
+          if (!openerStore) {
+            throw new Error("Opener application context not found.");
+          }
+          
+          // Check if user exists by email
+          const exists = openerStore.getUsers().some(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+          
+          if (exists) {
+            // Already registered - directly login
+            handleSocialLogin(email);
+          } else {
+            // New user - switch to onboarding
+            switchScreen('onboard');
+            document.getElementById('onboard-email').value = email;
+            document.getElementById('onboard-username').value = email.split('@')[0];
+            document.getElementById('onboard-contact').value = email.split('@')[0].toUpperCase();
+          }
+        } catch (err) {
+          switchScreen('custom');
+          const customErr = document.getElementById('custom-error');
+          customErr.textContent = err.message || "Failed to contact Movana Store database.";
+          customErr.classList.remove('d-none');
+        }
+      }, 1000);
+    };
+
+    // Handle onboarding form submit
+    const onboardForm = document.getElementById('onboard-form');
+    onboardForm.onsubmit = (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById('onboard-email').value.trim();
+      const username = document.getElementById('onboard-username').value.trim();
+      const contactName = document.getElementById('onboard-contact').value.trim();
+      const companyName = document.getElementById('onboard-company').value.trim();
+      const phone = document.getElementById('onboard-phone').value.trim();
+      const role = document.querySelector('input[name="onboard-role"]:checked').value;
+
+      const errors = [];
+      if (!username || username.length < 3) errors.push("Username must be at least 3 characters.");
+      if (!contactName) errors.push("Contact name is required.");
+      if (!companyName) errors.push("Company name is required.");
+      if (!phone) errors.push("Phone number is required.");
+
+      let mcNumber = '';
+      let dotNumber = '';
+      let equipmentTypes = [];
+
+      if (role === 'carrier') {
+        mcNumber = document.getElementById('onboard-mc').value.trim();
+        dotNumber = document.getElementById('onboard-dot').value.trim();
+        const selectedCbs = document.querySelectorAll('.onboard-equip-cb:checked');
+        selectedCbs.forEach(cb => equipmentTypes.push(cb.value));
+
+        if (!mcNumber) errors.push("MC Number is required for Carriers.");
+        if (!dotNumber) errors.push("DOT Number is required for Carriers.");
+        if (equipmentTypes.length === 0) errors.push("Please select at least one Equipment Type.");
+      }
+
+      if (errors.length > 0) {
+        const onboardErr = document.getElementById('onboard-error');
+        onboardErr.innerHTML = errors.join('<br>');
+        onboardErr.classList.remove('d-none');
+        return;
+      }
+
+      switchScreen('loading');
+      document.getElementById('loading-text').textContent = 'Creating profile...';
+
+      setTimeout(() => {
+        try {
+          const openerStore = window.opener && window.opener.Store;
+          if (!openerStore) {
+            throw new Error("Opener application context not found.");
+          }
+
+          // Register new social user
+          const additionalData = { contactName, phone };
+          if (role === 'carrier') {
+            additionalData.mcNumber = mcNumber;
+            additionalData.dotNumber = dotNumber;
+            additionalData.equipmentTypes = equipmentTypes;
+          }
+
+          const newUser = openerStore.registerSocialUser(username, email, role, companyName, additionalData);
+          
+          // Log in that user
+          const loggedInUser = openerStore.loginSocialUser(newUser.email);
+          
+          // Notify parent and close
+          postSuccessToParent(loggedInUser);
+        } catch (err) {
+          switchScreen('onboard');
+          const onboardErr = document.getElementById('onboard-error');
+          onboardErr.textContent = err.message || "Failed to create profile.";
+          onboardErr.classList.remove('d-none');
+        }
+      }, 1200);
+    };
+
+    // Helper functions
+    function switchScreen(screenId) {
+      document.querySelectorAll('.auth-screen').forEach(el => el.classList.add('d-none'));
+      document.getElementById(`screen-${screenId}`).classList.remove('d-none');
+    }
+
+    function handleSocialLogin(actualEmail) {
+      switchScreen('loading');
+      document.getElementById('loading-text').textContent = 'Authenticating...';
+
+      setTimeout(() => {
+        try {
+          const openerStore = window.opener && window.opener.Store;
+          if (!openerStore) {
+            throw new Error("Opener application context not found.");
+          }
+
+          // Check if this user email is registered
+          const user = openerStore.getUsers().find(u => u.email && u.email.toLowerCase() === actualEmail.toLowerCase());
+          if (!user) {
+            throw new Error("User does not exist in seed database.");
+          }
+
+          // Directly log the user in
+          const loggedInUser = openerStore.loginSocialUser(actualEmail);
+          
+          // Notify parent and close
+          postSuccessToParent(loggedInUser);
+        } catch (err) {
+          switchScreen('choose');
+          const chooseErr = document.getElementById('choose-error');
+          chooseErr.textContent = err.message || "Failed to sign in.";
+          chooseErr.classList.remove('d-none');
+        }
+      }, 1000);
+    }
+
+    function postSuccessToParent(user) {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'social-login-success',
+          user: user
+        }, window.location.origin);
+      }
+      window.close();
+    }
+  </script>
+</body>
+</html>
