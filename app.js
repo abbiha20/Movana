@@ -219,6 +219,7 @@
         emailLog.status = 'delivered';
         emailLog.response = JSON.stringify(result);
         logEmailInStore(emailLog);
+        console.log("Email API succeeded:", result);
         return true;
       } else {
         emailLog.status = 'failed';
